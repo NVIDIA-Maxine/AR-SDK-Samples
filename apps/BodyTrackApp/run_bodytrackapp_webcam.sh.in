@@ -1,0 +1,4 @@
+#!/bin/sh
+. ./setup_env.sh
+
+BodyTrackApp --model_path=$_ARSDK_MODELS --fullbody_pose_estimation=1 "$@"

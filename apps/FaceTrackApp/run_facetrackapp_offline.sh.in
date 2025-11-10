@@ -1,0 +1,10 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+FaceTrackApp \
+    --model_path=$_ARSDK_MODELS \
+    --offline_mode \
+    --in=faceTrack.mp4 \
+    --out=FaceTrackApp_out \
+    "$@"

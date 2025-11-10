@@ -1,0 +1,62 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+# Set the default inputs that will be used to generate the output.
+INPUT_VIDEO=lipsyncSampleVideo.mp4
+INPUT_AUDIO=lipsyncSampleAudio.wav
+OUTPUT_VIDEO=lipsync_final.mp4
+
+# Arguments to batch file, if provided.
+if [ -n "$1" ]; then INPUT_VIDEO=$1; fi
+if [ -n "$2" ]; then INPUT_AUDIO=$2; fi
+if [ -n "$3" ]; then OUTPUT_VIDEO=$3; fi
+
+TEMP_AUDIO=lipsyncTempAudio.wav
+TEMP_VIDEO=lipsyncTempVideo.avi
+TEMP_CORRECTED_VIDEO=lipsyncTempVideo_corrected.mp4
+
+echo Input video: "$INPUT_VIDEO"
+echo Input audio: "$INPUT_AUDIO"
+echo Output video: "$OUTPUT_VIDEO"
+
+# Extract 16 kHz mono audio.
+ffmpeg -hide_banner -loglevel error -y -i $INPUT_AUDIO -q:a 0 -ar 16000 -ac 1 -map a $TEMP_AUDIO
+if [ $? -ne 0 ]; then
+    echo ffmpeg failed
+    exit 1
+fi
+
+# Running the lipsync feature and generating the lipsync output.
+# Note that the output is video-only, ffmpeg is needed to combine with original audio.
+echo Generating the temporary result: "$TEMP_VIDEO"
+LipSyncApp --model_path=$_ARSDK_MODELS --in_video=$INPUT_VIDEO --in_audio=$TEMP_AUDIO --out=$TEMP_VIDEO --codec=ULRG
+if [ $? -ne 0 ]; then
+    echo LipSyncApp failed
+    exit 1
+fi
+
+# Mux the original audio with the output video.
+ffmpeg -hide_banner -loglevel error -y -i $TEMP_VIDEO -i $INPUT_AUDIO -c:v libx264 -crf 1 -c:a aac -map 0:v:0 -map 1:a:0 -shortest $OUTPUT_VIDEO
+if [ $? -ne 0 ]; then
+    echo ffmpeg failed
+    exit 1
+fi
+
+# Fix color metadata by copying from input video.
+./fix_metadata.sh $INPUT_VIDEO $OUTPUT_VIDEO $TEMP_CORRECTED_VIDEO
+if [ $? -ne 0 ]; then
+    echo fix_metadata.sh failed
+    exit 1
+fi
+mv "$TEMP_CORRECTED_VIDEO" "$OUTPUT_VIDEO"
+
+if [ -f "$OUTPUT_VIDEO" ]; then
+  echo The final output file: "$OUTPUT_VIDEO" exists.
+  echo Delete temporary files: "$TEMP_VIDEO" and  "$TEMP_AUDIO"
+  rm $TEMP_VIDEO
+  rm $TEMP_AUDIO
+else
+  echo The final output: "$OUTPUT_VIDEO" does not exist. Keep the temporary file: "$TEMP_VIDEO"
+  echo Please setup ffmpeg as instructed in the README file.
+fi

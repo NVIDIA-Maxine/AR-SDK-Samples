@@ -1,0 +1,14 @@
+@echo off
+REM LivePortrait offline demo
+REM Usage: run_liveportrait_offline.bat [options]
+
+SET PATH=%PATH%;@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;
+
+LivePortraitApp.exe ^
+  --in_src=live_portrait_sample_portrait.png ^
+  --in_drv=live_portrait_sample_video.mp4 ^
+  --model_path=@NVAR_MODEL_DIR@ ^
+  --out=live_portrait_out.mp4 ^
+  --offline_mode=true ^
+  --capture_outputs=true ^
+  %* 

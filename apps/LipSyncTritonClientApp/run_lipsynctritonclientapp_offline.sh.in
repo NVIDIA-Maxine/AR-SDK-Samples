@@ -1,0 +1,58 @@
+#!/bin/bash
+
+. ./setup_env.sh
+
+# Check if both required arguments are present
+if [ -z "$(echo "$*" | grep "\-\-src_videos")" ] || [ -z "$(echo "$*" | grep "\-\-src_audios")" ]; then
+    echo "Error: Missing required arguments"
+    echo "Usage:"
+    echo "./run_lipsynctritonclientapp_offline.sh --src_videos=vid1[,vid2,...,vidN] --src_audios=inAudioFile1[,inAudioFile2...,inAudioFileN] [--verbose]"
+    echo "Options:"
+    echo "  --verbose                Print detailed processing information"
+    exit 1
+fi
+
+# Run LipSync triton client app
+./LipSyncTritonClientApp --output_codec=ULRG --output_format=avi "$@"
+if [ $? -ne 0 ]; then
+    echo LipSyncTritonClientApp failed
+    exit 1
+fi
+
+
+# Fix metadata for each output video
+# Extract video list from arguments
+VIDEOS=$(echo "$*" | grep -o "\-\-src_videos=[^ ]*" | cut -d= -f2)
+AUDIOS=$(echo "$*" | grep -o "\-\-src_audios=[^ ]*" | cut -d= -f2)
+
+# Convert comma-separated list to array
+IFS=',' read -r -a video_array <<< "$VIDEOS"
+IFS=',' read -r -a audio_array <<< "$AUDIOS"
+
+for i in "${!video_array[@]}"; do
+    input_video="${video_array[$i]}"
+    input_audio="${audio_array[$i]}"
+    # Get the base name without extension
+    base_name="${input_video%.*}"
+    app_output_video="${base_name}_output.avi"
+    # Get the extension of the input video
+    extension="${input_video##*.}"
+    output_video="${base_name}_output.${extension}"
+    temp_corrected_video="${base_name}_temp_corrected.${extension}"
+    
+    if [ -f "$app_output_video" ]; then
+        echo "Muxing $input_audio with $app_output_video to $output_video"
+        ffmpeg -hide_banner -loglevel error -y -i "$app_output_video" -i "$input_audio" -c:v libx264 -crf 1 -c:a aac -map 0:v:0 -map 1:a:0 -shortest "$output_video"
+        if [ $? -ne 0 ]; then
+            echo ffmpeg failed
+            exit 1
+        fi
+        rm -f $app_output_video
+
+        echo "Fixing color metadata for $output_video using $input_video as reference"
+        ./fix_metadata.sh "$input_video" "$output_video" "$temp_corrected_video"
+        mv "$temp_corrected_video" "$output_video"
+    else
+        echo "Warning: Output video $app_output_video not found, skipping muxing"
+    fi
+done

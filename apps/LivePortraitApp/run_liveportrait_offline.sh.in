@@ -1,0 +1,13 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+LivePortraitApp \
+    --model_path=$_ARSDK_MODELS \
+	--show_drive=true \
+    --offline_mode=true \
+    --capture_outputs=true \
+    --in_src=live_portrait_sample_portrait.png \
+    --in_drv=live_portrait_sample_video.mp4 \
+    --out=live_portrait_generated.mp4 \
+    "$@"

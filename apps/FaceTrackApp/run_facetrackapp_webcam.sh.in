@@ -1,0 +1,5 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+FaceTrackApp --model_path=$_ARSDK_MODELS "$@"

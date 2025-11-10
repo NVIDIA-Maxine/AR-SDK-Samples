@@ -1,0 +1,68 @@
+@ECHO OFF
+SETLOCAL EnableDelayedExpansion
+SET PATH=%PATH%;@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;
+@REM SET PATH=..\..\samples\external\opencv\bin;..\..\samples\external\openh264\bin;..\..\samples\external\ffmpeg\bin;..\..\bin;%PATH%;
+
+@REM Set the default inputs that will be used to generate the output.
+SET INPUT_VIDEO=lipsyncSampleVideo.mp4
+SET INPUT_AUDIO=lipsyncSampleAudio.wav
+SET OUTPUT_VIDEO=lipsync_final.mp4
+
+@REM Arguments to batch file, if provided.
+IF [%1] NEQ [] (SET "INPUT_VIDEO=%~1")
+IF [%2] NEQ [] (SET "INPUT_AUDIO=%~2")
+IF [%3] NEQ [] (SET "OUTPUT_VIDEO=%~3")
+
+@REM Replace forward slashes with backslashes.
+SET "INPUT_VIDEO=%INPUT_VIDEO:/=\%"
+SET "INPUT_AUDIO=%INPUT_AUDIO:/=\%"
+SET "OUTPUT_VIDEO=%OUTPUT_VIDEO:/=\%"
+
+SET TEMP_AUDIO=lipsyncTempAudio.wav
+SET TEMP_VIDEO=lipsyncTempVideo.avi
+SET TEMP_CORRECTED_VIDEO=lipsyncTempVideo_corrected.mp4
+
+ECHO Input video: "%INPUT_VIDEO%" 
+ECHO Input audio: "%INPUT_AUDIO%"
+ECHO Output video: "%OUTPUT_VIDEO%"
+
+@REM Extract 16 kHz mono audio.
+ffmpeg.exe -hide_banner -loglevel error -y -i "%INPUT_AUDIO%" -q:a 0 -ar 16000 -ac 1 -map a "%TEMP_AUDIO%"
+IF %ERRORLEVEL% NEQ 0 (
+  ECHO ffmpeg failed
+  EXIT /b 1
+)
+
+@REM Running the lipsync feature and generating the lipsync output.
+@REM Note that the output is video-only, ffmpeg is needed to combine with original audio.
+ECHO Generating the temporary result: "%TEMP_VIDEO%"
+LipSyncApp.exe --model_path=@NVAR_MODEL_DIR@ --in_video="%INPUT_VIDEO%" --in_audio="%TEMP_AUDIO%" --out="%TEMP_VIDEO%" --codec=ULRG
+IF %ERRORLEVEL% NEQ 0 (
+  ECHO LipSyncApp failed
+  EXIT /b 1
+)
+
+@REM Mux the original audio with the output video.
+ffmpeg.exe -hide_banner -loglevel error -y -i "%TEMP_VIDEO%" -i "%INPUT_AUDIO%" -c:v libx264 -crf 1 -c:a aac -map 0:v:0 -map 1:a:0 -shortest "%OUTPUT_VIDEO%"
+IF %ERRORLEVEL% NEQ 0 (
+  ECHO ffmpeg failed
+  EXIT /b 1
+)
+
+@REM Fix color metadata by copying from input video.
+CALL fix_metadata.bat "%INPUT_VIDEO%" "%OUTPUT_VIDEO%" "%TEMP_CORRECTED_VIDEO%"
+IF %ERRORLEVEL% NEQ 0 (
+  ECHO fix_metadata.bat failed
+  EXIT /b 1
+)
+MOVE "%TEMP_CORRECTED_VIDEO%" "%OUTPUT_VIDEO%"
+
+IF EXIST "%OUTPUT_VIDEO%" (
+  ECHO The final output file: "%OUTPUT_VIDEO%" exists.
+  ECHO Delete temporary files: "%TEMP_VIDEO%" and  "%TEMP_AUDIO%"
+  DEL "%TEMP_VIDEO%"
+  DEL "%TEMP_AUDIO%"
+) ELSE (
+  ECHO The final output: "%OUTPUT_VIDEO%" does not exist. Keep the temporary file: %TEMP_VIDEO%
+  ECHO Please setup ffmpeg as instructed in the README file.
+)

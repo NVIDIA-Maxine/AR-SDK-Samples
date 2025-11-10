@@ -1,0 +1,130 @@
+@ECHO OFF
+SETLOCAL ENABLEDELAYEDEXPANSION
+
+REM Copy color metadata (primaries / transfer / matrix) from <src> to <tgt>, writing <tgt>_corrected.mp4 (or custom output file).
+REM Usage:  fix_metadata.bat src.mp4 tgt.mp4 [out.mp4]
+
+IF "%~2"=="" (
+    ECHO "Usage: %~nx0 <src.mp4> <tgt.mp4> [out.mp4]"
+    EXIT /b 1
+)
+
+SET "src=%~1"
+SET "tgt=%~2"
+IF "%~3"=="" (
+    SET "out=%~dpn2_corrected%~x2"
+) ELSE (
+    SET "out=%~3"
+)
+
+REM ---- Lookup tables: mnemonic -> numeric ID ----
+SET prim_id[bt709]=1
+SET prim_id[unspecified]=2
+SET prim_id[unknown]=2
+SET prim_id[bt470m]=4
+SET prim_id[bt470bg]=5
+SET prim_id[smpte170m]=6
+SET prim_id[smpte240m]=7
+SET prim_id[film]=8
+SET prim_id[bt2020]=9
+SET prim_id[smpte428]=10
+SET prim_id[smpte428_1]=10
+SET prim_id[smpte431]=11
+SET prim_id[smpte432]=12
+SET prim_id[jedec-p22]=22
+SET prim_id[ebu3213]=22
+
+SET tran_id[bt709]=1
+SET tran_id[unspecified]=2
+SET tran_id[unknown]=2
+SET tran_id[gamma22]=4
+SET tran_id[gamma28]=5
+SET tran_id[smpte170m]=6
+SET tran_id[smpte240m]=7
+SET tran_id[linear]=8
+SET tran_id[log]=9
+SET tran_id[log100]=9
+SET tran_id[log_sqrt]=10
+SET tran_id[log316]=10
+SET tran_id[iec61966-2-4]=11
+SET tran_id[iec61966_2_4]=11
+SET tran_id[bt1361]=12
+SET tran_id[bt1361e]=12
+SET tran_id[iec61966-2-1]=13
+SET tran_id[iec61966_2_1]=13
+SET tran_id[bt2020-10]=14
+SET tran_id[bt2020_10bit]=14
+SET tran_id[bt2020-12]=15
+SET tran_id[bt2020_12bit]=15
+SET tran_id[smpte2084]=16
+SET tran_id[smpte428]=17
+SET tran_id[smpte428_1]=17
+SET tran_id[arib-std-b67]=18
+
+SET matr_id[rgb]=0
+SET matr_id[bt709]=1
+SET matr_id[unspecified]=2
+SET matr_id[unknown]=2
+SET matr_id[fcc]=4
+SET matr_id[bt470bg]=5
+SET matr_id[smpte170m]=6
+SET matr_id[smpte240m]=7
+SET matr_id[ycgco]=8
+SET matr_id[ycocg]=8
+SET matr_id[bt2020nc]=9
+SET matr_id[bt2020_ncl]=9
+SET matr_id[bt2020c]=10
+SET matr_id[bt2020_cl]=10
+SET matr_id[smpte2085]=11
+SET matr_id[chroma-derived-nc]=12
+SET matr_id[chroma-derived-c]=13
+SET matr_id[ictcp]=14
+SET matr_id[ipt-c2]=15
+SET matr_id[ycgco-re]=16
+SET matr_id[ycgco-ro]=17
+
+
+REM Primaries
+SET prim=unknown
+CALL :probe color_primaries prim
+SET p_id=!prim_id[%prim%]!
+IF "%prim%"=="" SET prim=unknown
+IF "%p_id%"=="" SET p_id=2
+
+REM Transfer
+SET tran=unknown
+CALL :probe color_transfer tran
+SET t_id=!tran_id[%tran%]!
+IF "%tran%"=="" SET tran=unknown
+IF "%t_id%"=="" SET t_id=2
+
+REM Matrix
+SET matr=unknown
+CALL :probe color_space matr
+SET m_id=!matr_id[%matr%]!
+IF "%matr%"=="" SET matr=unknown
+IF "%m_id%"=="" SET m_id=2
+
+REM Run ffmpeg
+ffmpeg.exe -hide_banner -loglevel error -y -i "%tgt%" -codec copy ^
+  -bsf:v "h264_metadata=colour_primaries=%p_id%:transfer_characteristics=%t_id%:matrix_coefficients=%m_id%" ^
+  -color_primaries %prim% -color_trc %tran% -colorspace %matr% ^
+  "%out%"
+
+IF ERRORLEVEL 1 (
+    ECHO "Error running ffmpeg"
+    EXIT /b 1
+)
+
+ECHO "Copied color metadata from source -> %out%  (P=%prim%  T=%tran%  M=%matr%)"
+GOTO :eof
+
+:probe
+REM %1 = ffprobe key, %2 = output var
+FOR /f "usebackq tokens=*" %%A in (`ffprobe.exe -hide_banner -loglevel error -select_streams v:0 -show_entries "stream=%1" -of "default=nokey=1:noprint_wrappers=1" "%src%"`) do (
+    SET "val=%%A"
+    SET "val=!val: =!"
+    SET "val=!val:~0,32!"
+    SET "%2=!val!"
+)
+GOTO :eof

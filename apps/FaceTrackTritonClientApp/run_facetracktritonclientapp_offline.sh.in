@@ -1,0 +1,60 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+MISSINGVID="true"
+for arg in "$@"
+do
+    case "$arg" in
+        -*);;
+        *) MISSINGVID="false";;
+    esac
+done
+
+if $MISSINGVID
+then
+    echo "Please provide video files as arguments to the script."
+    echo "Usage:"
+    echo "$(basename $0) video1.mp4 [... videoN.mp4]"
+    exit 0
+fi
+
+echo "This script will run the following effects sequentially:"
+echo "FaceBoxDetection"
+echo "LandmarkDetection with 68 landmarks (Performance model)"
+echo "LandmarkDetection with 126 landmarks (Performance model)"
+echo "LandmarkDetection with 68 landmarks (Quality model)"
+echo "LandmarkDetection with 126 landmarks (Quality model)"
+
+# Run face detection
+FaceTrackTritonClientApp \
+    --effect=FaceBoxDetection                     \
+    --output_name_tag=output_facedetect           \
+    "$@"
+
+# Run face keypoints
+FaceTrackTritonClientApp \
+    --effect=LandmarkDetection                    \
+    --landmark_mode=0                             \
+    --output_name_tag=output_facelandmark68_m0    \
+    "$@"
+
+FaceTrackTritonClientApp \
+    --effect=LandmarkDetection                    \
+    --landmark_mode=0                             \
+    --landmarks_126=true                          \
+    --output_name_tag=output_facelandmark126_m0   \
+    "$@"
+
+FaceTrackTritonClientApp \
+    --effect=LandmarkDetection                    \
+    --landmark_mode=1                             \
+    --output_name_tag=output_facelandmark68_m1    \
+    "$@"
+
+FaceTrackTritonClientApp \
+    --effect=LandmarkDetection                    \
+    --landmark_mode=1                             \
+    --landmarks_126=true                          \
+    --output_name_tag=output_facelandmark126_m1   \
+    "$@"

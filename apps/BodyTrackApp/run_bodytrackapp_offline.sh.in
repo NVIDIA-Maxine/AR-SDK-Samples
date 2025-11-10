@@ -1,0 +1,11 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+BodyTrackApp \
+    --model_path=$_ARSDK_MODELS \
+    --offline_mode \
+    --in=bodyTrack.mp4 \
+    --out=./bodyTrack_out \
+    --fullbody_pose_estimation=1 \
+    "$@"

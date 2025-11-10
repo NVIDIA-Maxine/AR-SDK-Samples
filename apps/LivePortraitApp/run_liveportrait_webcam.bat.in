@@ -1,0 +1,10 @@
+@echo off
+REM LivePortrait webcam demo
+REM Usage: run_liveportrait_webcam.bat [options]
+
+SET PATH=%PATH%;@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;
+
+LivePortraitApp.exe ^
+  --in_src=live_portrait_sample_portrait.png ^
+  --model_path=@NVAR_MODEL_DIR@ ^
+  %* 

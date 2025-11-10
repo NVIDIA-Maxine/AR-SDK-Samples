@@ -1,0 +1,26 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+MISSINGVID="true"
+for arg in "$@"
+do
+    case "$arg" in
+        -*);;
+        *) MISSINGVID="false";;
+    esac
+done
+
+if $MISSINGVID
+then
+    echo "Please provide source images of the same resolution and audio files as arguments to the script."
+    echo "Usage:"
+    echo "$(basename $0) --src_images=image1[,image2,...,imageN]  inAudioFile1 [inAudioFile2 ... inAudioFileN]"
+    exit 0
+fi
+
+# Run face detection
+SpeechLivePortraitTritonClientApp \
+    --output_name_tag=output_slp \
+    "$@"
+

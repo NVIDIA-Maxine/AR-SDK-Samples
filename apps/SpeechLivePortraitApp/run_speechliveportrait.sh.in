@@ -1,0 +1,19 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+SpeechLivePortraitApp \
+    --model_path=$_ARSDK_MODELS \
+    --in_src=speech_live_portrait_sample_portrait.png  \
+    --in_drv=speech_live_portrait_sample_audio.wav \
+    --out=speech_live_portrait_generated.mp4 \
+    "$@"
+
+# NOTE - Please ensure the filenames used in command below match with what has been used in the command above
+# gen.mp4 used below should match with the filename passed for --out in the command above
+# speech_live_portrait_sample_audio.wav used below should match with the filename passed for --in_drv in the command above
+
+# ffmpeg is used to mux the audio with the output video
+ffmpeg -y -i speech_live_portrait_generated.mp4 -i speech_live_portrait_sample_audio.wav -c:v copy -c:a aac speech_live_portrait_out.mp4
+
+rm speech_live_portrait_generated.mp4

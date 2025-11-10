@@ -1,0 +1,3 @@
+SETLOCAL
+SET PATH=%PATH%;@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;
+GazeRedirectionApp.exe --model_path=@NVAR_MODEL_DIR@ --offline_mode --in=eyeContact.mp4 --out=eyeContact_out.mp4

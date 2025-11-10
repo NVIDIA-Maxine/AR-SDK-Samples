@@ -1,0 +1,5 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+ExpressionApp --model_path=$_ARSDK_MODELS --expr_mode=2 --show "$@"

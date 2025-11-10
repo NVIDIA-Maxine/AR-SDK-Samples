@@ -1,0 +1,103 @@
+# a helper script to set up LD_LIBRARY_PATH + PATH
+# for running the sample apps
+
+findpath() {
+    # findpath "descriptive error text" something-that-must-exist locations-to-look...
+    # used to find a library based on files that should exist in that location
+    err_desc="$1"
+    req_file="$2"
+    shift 2
+    for prefix in "$@"
+    do
+        if [ -e "$prefix/$req_file" ]
+        then
+            echo $prefix
+            return
+        fi
+    done
+    echo "Could not find $err_desc" 1>&2
+    exit 1
+}
+
+findfeaturelibpaths() {
+    # findfeaturelibpaths "SDK_ROOT"
+    # Finds all features within SDK_ROOT, and adds SDK_ROOT/features/<feature>/lib for all features
+    sdk_root="$1"
+    
+    if [ -z "$sdk_root" ]; then
+        echo "Error: SDK_ROOT parameter is required" 1>&2
+        return 1
+    fi
+    
+    if [ ! -d "$sdk_root" ]; then
+        echo "Error: SDK_ROOT directory '$sdk_root' does not exist" 1>&2
+        return 1
+    fi
+    
+    features_dir="$sdk_root/features"
+    if [ ! -d "$features_dir" ]; then
+        echo "Warning: Features directory '$features_dir' does not exist" 1>&2
+        return 0
+    fi
+    
+    # Find all subdirectories in features directory and build colon-separated list
+    feature_paths=""
+    for feature_dir in "$features_dir"/*; do
+        if [ -d "$feature_dir" ]; then
+            feature_name=$(basename "$feature_dir")
+            lib_dir="$feature_dir/lib"
+            
+            if [ -d "$lib_dir" ]; then
+                if [ -z "$feature_paths" ]; then
+                    feature_paths="$lib_dir"
+                else
+                    feature_paths="$feature_paths:$lib_dir"
+                fi
+            fi
+        fi
+    done
+    
+    echo "$feature_paths"
+}
+
+_TRT_VER_SHORT=$(echo "@REQUIRED_TENSORRT_VER@" | sed 's/^\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\..*/\1.\2\.\3/')
+
+_CUDA=`findpath \
+    "Cuda @REQUIRED_CUDA_VER@" \
+    libcudart.so \
+    $CUDA_TOOLKIT \
+    /usr/local/ARSDK/external/cuda/lib \
+    /usr/local/cuda-@REQUIRED_CUDA_VER@/lib64 \
+    /usr/lib/x86_64-linux-gnu \
+    /usr/lib64`
+
+_TRT=`findpath \
+    "TensorRT @REQUIRED_TENSORRT_VER@" \
+    libnvinfer.so.${_TRT_VER_SHORT} \
+    $TensorRT_DIR \
+    /usr/local/ARSDK/external/tensorrt/lib \
+    /usr/local/TensorRT-@REQUIRED_TENSORRT_VER@/lib \
+    /usr/lib/x86_64-linux-gnu \
+    /usr/lib64`
+
+_ARSDK_LIB=`findpath \
+    "ARSDK lib" \
+    libnvARPose.so \
+    @NVAR_DYNAMIC_LIBRARY_DIR@ \
+    /usr/lib/x86_64-linux-gnu \
+    /usr/lib64 \
+    /usr/local/ARSDK/lib` \
+
+_ARSDK_MODELS=`findpath \
+    "ARSDK models" \
+    . \
+    @NVAR_MODEL_DIR@ \
+    /usr/share/libvideofx/models \
+    /usr/local/ARSDK/lib/models` \
+
+# Find feature library paths and add them to LD_LIBRARY_PATH
+_ARSDK_ROOT=$_ARSDK_LIB/..
+_FEATURE_PATHS=`findfeaturelibpaths "$_ARSDK_ROOT"`
+
+export LD_LIBRARY_PATH=$_ARSDK_LIB:$_FEATURE_PATHS:$_CUDA:$_TRT${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+export PATH=`pwd`:$PATH

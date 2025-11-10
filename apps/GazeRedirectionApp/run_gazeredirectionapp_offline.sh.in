@@ -1,0 +1,19 @@
+#!/bin/sh
+
+. ./setup_env.sh
+if [ "$#" -gt 0 ]; then
+	input_filename=$1
+else
+	input_filename=eyeContact.mp4
+fi
+
+ffmpeg -i $input_filename audio.wav
+GazeRedirectionApp \
+    --model_path=$_ARSDK_MODELS \
+    --offline_mode \
+    --in=$input_filename \
+    --out=./output.mp4 \
+    "$@"
+ffmpeg -y -i output.mp4 -i audio.wav -c copy eyeContact_out.mkv
+rm output.mp4
+rm audio.wav

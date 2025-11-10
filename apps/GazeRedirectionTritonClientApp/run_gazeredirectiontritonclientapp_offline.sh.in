@@ -1,0 +1,25 @@
+#!/bin/sh
+
+. ./setup_env.sh
+
+MISSINGVID="true"
+for arg in "$@"
+do
+    case "$arg" in
+        -*);;
+        *) MISSINGVID="false";;
+    esac
+done
+
+if $MISSINGVID
+then
+    echo "Please provide video files as arguments to the script."
+    echo "Usage:"
+    echo "$(basename $0) video1.mp4 [... videoN.mp4]"
+    exit 0
+fi
+
+# Run Eye Contact
+GazeRedirectionTritonClientApp \
+    --output_name_tag=output_eyecontact \
+    "$@"

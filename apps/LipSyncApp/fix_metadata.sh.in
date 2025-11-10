@@ -1,0 +1,96 @@
+#!/bin/sh
+
+# Copy color metadata (primaries / transfer / matrix) from <src> to <tgt>, writing <tgt>_corrected.mp4 (or custom output file).
+# Usage:  fix_metadata.sh src.mp4 tgt.mp4 [out.mp4]
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <src.mp4> <tgt.mp4> [out.mp4]"
+    exit 1
+fi
+
+src="$1"
+tgt="$2"
+if [ -z "$3" ]; then
+    out="${tgt%.*}_corrected.${tgt##*.}"
+else
+    out="$3"
+fi
+
+# Get color metadata from source video
+prim=$(ffprobe -hide_banner -loglevel error -select_streams v:0 -show_entries stream=color_primaries -of default=nokey=1:noprint_wrappers=1 "$src" | tr -d ' ')
+tran=$(ffprobe -hide_banner -loglevel error -select_streams v:0 -show_entries stream=color_transfer -of default=nokey=1:noprint_wrappers=1 "$src" | tr -d ' ')
+matr=$(ffprobe -hide_banner -loglevel error -select_streams v:0 -show_entries stream=color_space -of default=nokey=1:noprint_wrappers=1 "$src" | tr -d ' ')
+
+# Map color primaries to numeric IDs
+case "$prim" in
+    "bt709") p_id=1 ;;
+    "unspecified"|"unknown") p_id=2 ;;
+    "bt470m") p_id=4 ;;
+    "bt470bg") p_id=5 ;;
+    "smpte170m") p_id=6 ;;
+    "smpte240m") p_id=7 ;;
+    "film") p_id=8 ;;
+    "bt2020") p_id=9 ;;
+    "smpte428"|"smpte428_1") p_id=10 ;;
+    "smpte431") p_id=11 ;;
+    "smpte432") p_id=12 ;;
+    "jedec-p22"|"ebu3213") p_id=22 ;;
+    *) p_id=2 ;; # Default to unspecified
+esac
+
+# Map transfer characteristics to numeric IDs
+case "$tran" in
+    "bt709") t_id=1 ;;
+    "unspecified"|"unknown") t_id=2 ;;
+    "gamma22") t_id=4 ;;
+    "gamma28") t_id=5 ;;
+    "smpte170m") t_id=6 ;;
+    "smpte240m") t_id=7 ;;
+    "linear") t_id=8 ;;
+    "log"|"log100") t_id=9 ;;
+    "log_sqrt"|"log316") t_id=10 ;;
+    "iec61966-2-4"|"iec61966_2_4") t_id=11 ;;
+    "bt1361"|"bt1361e") t_id=12 ;;
+    "iec61966-2-1"|"iec61966_2_1") t_id=13 ;;
+    "bt2020-10"|"bt2020_10bit") t_id=14 ;;
+    "bt2020-12"|"bt2020_12bit") t_id=15 ;;
+    "smpte2084") t_id=16 ;;
+    "smpte428"|"smpte428_1") t_id=17 ;;
+    "arib-std-b67") t_id=18 ;;
+    *) t_id=2 ;; # Default to unspecified
+esac
+
+# Map matrix coefficients to numeric IDs
+case "$matr" in
+    "rgb") m_id=0 ;;
+    "bt709") m_id=1 ;;
+    "unspecified"|"unknown") m_id=2 ;;
+    "fcc") m_id=4 ;;
+    "bt470bg") m_id=5 ;;
+    "smpte170m") m_id=6 ;;
+    "smpte240m") m_id=7 ;;
+    "ycgco"|"ycocg") m_id=8 ;;
+    "bt2020nc"|"bt2020_ncl") m_id=9 ;;
+    "bt2020c"|"bt2020_cl") m_id=10 ;;
+    "smpte2085") m_id=11 ;;
+    "chroma-derived-nc") m_id=12 ;;
+    "chroma-derived-c") m_id=13 ;;
+    "ictcp") m_id=14 ;;
+    "ipt-c2") m_id=15 ;;
+    "ycgco-re") m_id=16 ;;
+    "ycgco-ro") m_id=17 ;;
+    *) m_id=2 ;; # Default to unspecified
+esac
+
+# Run ffmpeg to copy metadata
+ffmpeg -hide_banner -loglevel error -y -i "$tgt" -codec copy \
+    -bsf:v "h264_metadata=colour_primaries=$p_id:transfer_characteristics=$t_id:matrix_coefficients=$m_id" \
+    -color_primaries "$prim" -color_trc "$tran" -colorspace "$matr" \
+    "$out"
+
+if [ $? -ne 0 ]; then
+    echo "Error running ffmpeg"
+    exit 1
+fi
+
+echo "Copied color metadata from source -> $out  (P=$prim  T=$tran  M=$matr)"
