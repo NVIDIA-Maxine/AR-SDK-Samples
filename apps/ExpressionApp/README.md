@@ -6,17 +6,6 @@ used to control the expressions, pose and gaze of a 3D morphable face model. The
 real-time video from a webcam or offline videos from files. It illustrates the facial keypoints that are tracked, plots
 the expression signals that are derived, and renders an animated 3D avatar mesh.
 
-The application runs either the Face3DReconstruction, or FaceExpression feature, depending on which expression mode is
-used. The expression mode is toggled using the `1` and `2` keys on the keyboard
-
-- `1` - Face3DReconstruction expression estimation
-- `2` - FaceExpression expression estimation (default, and recommended for avatar animation)
-
-The FaceExpression mode is preferred for avatar animation. Note that Face3DReconstruction is demonstrated for its
-ability to track the face over time for AR effects. This feature enables identity face shape estimation on top of
-expression estimation and is better demonstrated in the FaceTrackApp sample application. The resulting expression weights
-from FaceExpression is more accurate than from Face3DReconstruction.
-
 For details on command line arguments, execute `ExpressionApp --help`.
 For more controls and configurations of the sample app, including expression definition and conversion to ARKit
 blendshapes, please read the SDK programming guide. It also contains information about how to control the GUI which can
@@ -31,7 +20,6 @@ This app requires the following features to be installed. Make sure to install t
 - nvARFaceExpressions
 - nvARLandmarkDetection
 - nvARFaceBoxDetection
-- nvARFace3DReconstruction
 
 Command-Line Arguments for the ExpressionApp Sample Application
 ---------------------------------------------------------------
@@ -41,11 +29,8 @@ Command-Line Arguments for the ExpressionApp Sample Application
 | `--cam_res=[<width>x]<height>`     | Specifies the resolution as the height or the width and height. |
 | `--codec=<fourcc>`                 | FourCC code for the desired codec (default `avc1`). |
 | `--debug[={true\|false}]`          | Reports debugging information (default false). |
-| `--expr_mode=<number>`             | The SDK feature used for generation expressions.<br><br>- `1`: `Face3DReconstruction`<br><br>- `2`: Facial Expression Estimation (default) |
 | `--pose_mode=<number>`             | Pose mode used for the FaceExpressions feature only. The default value is 0.<br><br>- `0`: `3DOF`<br><br>- `1`: `6DOF` |
-| `--face_model=<file>`              | Specifies the face model to be used for fitting (default `face_model2.nvf`). |
 | `--filter=<bitfield>`             | Here are the values:<br><br>- `1`: face box<br>- `2`: landmarks<br>- `4`: pose<br>- `16`: expressions<br>- `32`: gaze<br>- `256`: eye and mouth closure<br><br>The default value is 55, which means face box, landmarks, pose, expressions, gaze, and no closure. |
-| `--gaze=<number>`                  | Specifies the gaze estimation mode:<br><br>- `0`: Implicit (default)<br><br>- `1`: Explicit |
 | `--cheekpuff[={1\|0}]`             | (Experimental) Enable cheek puff blendshapes. The default value is 0. |
 | `--fov=<degrees>`                  | The field of view in degrees. The default value is 0, which implies orthography. |
 | `--help`                           | Prints help information. |
@@ -54,7 +39,7 @@ Command-Line Arguments for the ExpressionApp Sample Application
 | `--model_dir=<path>`               | Specifies the directory that contains the TRT models. |
 | `--model_path=<path>`              | Specifies the directory that contains the TRT models. |
 | `--out=<file>`                     | Specifies the output file. |
-| `--render_model=<file>`            | Specifies the face model that will be used for rendering. The default is `face_model2.nvf`. For a more comprehensive visualization model using partitions, use `face_model3.nvf`. |
+| `--render_model=<file>`            | Specifies the face model that will be used for rendering. The default is `face_model3.nvf`. |
 | `--show[={true\|false}]`           | Shows the results. The default value is false, unless `--out` is empty. |
 | `--show_ui[={true\|false}]`        | Shows the expression calibration UI. The default value is false. |
 | `--temporal=<bitfield>`           | Applies the temporal filter. For more information, refer to `--filter`. |
@@ -84,10 +69,7 @@ controls to change the runtime behavior of the application:
 | P or Ctrl + P | Toggles pose filtering. |
 | E or Ctrl + E | Toggles expression filtering. |
 | G or Ctrl + G | Toggles gaze filtering. |
-| C or Ctrl + C | Toggles closure enhancement. |
 | M or Ctrl + M | Toggles pose mode. |
-| 1             | Uses expressions from mesh fitting (`Face3DReconstruction`). |
-| 2             | Uses expressions from DNN (Facial Expression Estimation). |
 
 > [!NOTE]
 > On Linux, the Shift keystrokes are necessary because the control
@@ -99,7 +81,6 @@ Application GUI
 Expression coefficients and their
 fine-tuning controls can be displayed by selecting the various
 **Expression Graph Options** checkboxes.
-To set other display options, in **Expression Mode**, enter 1 or 2.
 You can save or load settings by clicking **SaveSettings** or
 **LoadSettings**.
 

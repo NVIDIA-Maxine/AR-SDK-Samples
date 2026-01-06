@@ -126,25 +126,20 @@ class FaceEngine {
   int getInputImageWidth() { return input_image_width; }
   int getInputImageHeight() { return input_image_height; }
   int getInputImagePitch() { return input_image_pitch = input_image_width * 3 * sizeof(unsigned char); }
-  void setFaceModel(const char *faceModel) { face_model = faceModel; }
-
+  
   Err createFeatures(const char* modelPath, unsigned int _batchSize = 1, unsigned int mode = 0);
   Err createFaceDetectionFeature(const char* modelPath, CUstream stream);
   Err createLandmarkDetectionFeature(const char* modelPath, unsigned int batchSize, CUstream stream, unsigned int mode = 0);
-  Err createFaceFittingFeature(const char* modelPath, CUstream stream, unsigned int mode = 0);
   void destroyFeatures();
   void destroyFaceDetectionFeature();
   void destroyLandmarkDetectionFeature();
-  void destroyFaceFittingFeature();
   Err initFeatureIOParams();
   Err initFaceDetectionIOParams(NvCVImage* _inputImageBuffer);
   Err initLandmarkDetectionIOParams(NvCVImage* _inputImageBuffer);
-  Err initFaceFittingIOParams(NvCVImage* _inputImageBuffer);
   void releaseFeatureIOParams();
   void releaseFaceDetectionIOParams();
   void releaseLandmarkDetectionIOParams();
-  void releaseFaceFittingIOParams();
-
+  
   NvCV_Status findFaceBoxes(unsigned &num_boxes);
   NvAR_Rect* getLargestBox();
   FaceEngine::Err findLandmarks();
@@ -158,29 +153,17 @@ class FaceEngine {
   FaceEngine::Err findLargestFaceBox(NvAR_Rect& faceBox, int variant = 0);
   FaceEngine::Err acquireFaceBox(cv::Mat& src, NvAR_Rect& faceBox,int variant = 0); 
   FaceEngine::Err acquireFaceBoxAndLandmarks(cv::Mat& src, NvAR_Point2f* refMarks, NvAR_Rect& faceBox, int variant = 0);
-  Err fitFaceModel(cv::Mat& frame);
-  NvAR_FaceMesh* getFaceMesh();
-  NvAR_RenderingParams* getRenderingParams();
-  float* getShapeEigenvalues();
-  float* getExpressionCoefficients();
   void setFaceStabilization(bool);
-  int getNumShapeEigenvalues();
-  int getNumExpressionCoefficients();
   Err setNumLandmarks(int);
   int getNumLandmarks() { return numLandmarks; }
   void DrawPose(const cv::Mat& src, const NvAR_Quaternion* pose) const;
   std::array<float, 2> GetAverageLandmarkPositionInGlSpace() const;
 
   NvCVImage inputImageBuffer{}, tmpImage{}, outputImageBuffer{};
-  NvAR_FeatureHandle faceDetectHandle{}, landmarkDetectHandle{}, faceFitHandle{};
+  NvAR_FeatureHandle faceDetectHandle{}, landmarkDetectHandle{};
   std::vector<NvAR_Point2f> facial_landmarks;
   std::vector<float> facial_landmarks_confidence;
   std::vector<NvAR_Quaternion> facial_pose;
-  NvAR_FaceMesh* face_mesh{};
-  std::vector<NvAR_Vector3f> m_vertices;
-  std::vector<NvAR_Vector3u16> m_triangles;
-  NvAR_RenderingParams* rendering_params{};
-  std::vector<float> shapeEigenvalues, expressionCoefficients;
   CUstream stream{};
   std::vector<NvAR_Rect> output_bbox_data;
   std::vector<float> output_bbox_conf_data;
@@ -189,8 +172,7 @@ class FaceEngine {
   std::mt19937 ran;
   int numLandmarks;
   float confidenceThreshold;
-  std::string face_model;
-  
+
   bool bStabilizeFace;
   bool bUseOTAU;
   char *fdOTAModelPath, *ldOTAModelPath;
@@ -200,7 +182,7 @@ class FaceEngine {
     bStabilizeFace = true;
     numLandmarks = LANDMARKS_INFO[0].numPoints;
     confidenceThreshold = LANDMARKS_INFO[0].confidence_threshold;
-    appMode = faceMeshGeneration;
+    appMode = landmarkDetection;
     input_image_width = 640;
     input_image_height = 480;
     input_image_pitch = 3 * input_image_width * sizeof(unsigned char);  // RGB
@@ -208,7 +190,7 @@ class FaceEngine {
     fdOTAModelPath = NULL;
     ldOTAModelPath = NULL;
   }
-  enum mode { faceDetection = 0, landmarkDetection, faceMeshGeneration
+  enum mode { faceDetection = 0, landmarkDetection
   } appMode;
   void setAppMode(FaceEngine::mode _mAppMode);
 };

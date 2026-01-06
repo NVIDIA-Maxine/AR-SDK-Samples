@@ -23,7 +23,7 @@
 # ExpressionApp #
 #################
 
-set(REQUIRED_FEATURES nvARFaceExpressions:1.0.0.0 nvARLandmarkDetection:1.0.0.0 nvARFaceBoxDetection:1.0.0.0 nvARFace3DReconstruction:1.0.0.0)
+set(REQUIRED_FEATURES nvARFaceExpressions:1.1.0.0 nvARLandmarkDetection:1.1.0.0 nvARFaceBoxDetection:1.1.0.0)
 foreach(REQUIRED_FEATURE_AND_VERSION IN LISTS REQUIRED_FEATURES)
   verify_app_feature_dependency(${REQUIRED_FEATURE_AND_VERSION} RESULT)
   if(NOT RESULT)

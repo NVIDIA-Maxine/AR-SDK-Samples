@@ -1,9 +1,0 @@
-#!/bin/sh
-
-. ./setup_env.sh
-
-LivePortraitApp \
-    --model_path=$_ARSDK_MODELS \
-    --show_drive=true \
-    --in_src=live_portrait_sample_portrait.png \
-    "$@"

@@ -1,7 +1,6 @@
 @ECHO OFF
 SETLOCAL EnableDelayedExpansion
-SET PATH=%PATH%;@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;
-@REM SET PATH=..\..\samples\external\opencv\bin;..\..\samples\external\openh264\bin;..\..\samples\external\ffmpeg\bin;..\..\bin;%PATH%;
+SET PATH=@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;%PATH%;
 
 @REM Set the default inputs that will be used to generate the output.
 SET INPUT_VIDEO=lipsyncSampleVideo.mp4

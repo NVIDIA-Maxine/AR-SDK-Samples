@@ -105,14 +105,13 @@ static void glfw_error_callback(int error, const char* description) {
   printf("Glfw Error %d: %s\n", error, description);
 }
 
-void ExpressionAppUI::init(int numExpr, int filter, int exprMode, int display, int showFPS) {
+void ExpressionAppUI::init(int numExpr, int filter, int display, int showFPS) {
   keyboard_input_ = -1;
   filter_face_box_ = (filter & (NVAR_TEMPORAL_FILTER_FACE_BOX)) ? true : false;
   filter_face_landmark_ = (filter & (NVAR_TEMPORAL_FILTER_FACIAL_LANDMARKS)) ? true : false;
   filter_face_rot_pose_ = (filter & (NVAR_TEMPORAL_FILTER_FACE_ROTATIONAL_POSE)) ? true : false;
   filter_face_expr_ = (filter & (NVAR_TEMPORAL_FILTER_FACIAL_EXPRESSIONS)) ? true : false;
   filter_face_gaze_ = (filter & (NVAR_TEMPORAL_FILTER_FACIAL_GAZE)) ? true : false;
-  filter_enhance_expr_ = (filter & (NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS)) ? true : false;
   num_expressions_ = numExpr;
   show_expr_   = false;
   brow_expr_  = false;
@@ -121,7 +120,6 @@ void ExpressionAppUI::init(int numExpr, int filter, int exprMode, int display, i
   jaw_expr_   = false;
   mouth_expr_ = false;
   nose_expr_  = false;
-  curr_state_.expr_mode = exprMode;
   omniverse_interface_window_ = false;
   load_from_file_ = false;
   curr_state_.calibrate = false;
@@ -159,20 +157,6 @@ void ExpressionAppUI::cleanup() {
   ui_expression_list_.clear();
 }
 
-void ExpressionAppUI::showMLPSetting() {
-  ImGui::PushItemWidth(100);
-  ImGui::InputInt("Expression Mode : 1 : Mesh Fitting , 2: MLP", &curr_state_.expr_mode);
-  if (curr_state_.expr_mode < 1) {
-    curr_state_.expr_mode = 1;
-  }
-  if (curr_state_.expr_mode > 2) {
-    curr_state_.expr_mode = 2;
-  }
-  ImGui::PopItemWidth();
-  ImGui::NewLine();
-  ImGui::NewLine();
-}
-
 void ExpressionAppUI::showFilterSetting() {
   if (!show_filter_window_) {
     if (ImGui::Button("Set Filters")) {
@@ -205,9 +189,6 @@ void ExpressionAppUI::showFilterSetting() {
     ImGui::Checkbox("##NVAR_TEMPORAL_FILTER_FACIAL_GAZE", &filter_face_gaze_); ImGui::SameLine();
     ImGui::Text("FILTER_FACIAL_GAZE");
     ImGui::NewLine();
-    ImGui::Checkbox("##NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS", &filter_enhance_expr_); ImGui::SameLine();
-    ImGui::Text("FILTER_ENHANCE_EXPRESSIONS");
-    ImGui::NewLine();
     ImGui::NewLine();
     
     curr_state_.input_filter |= filter_face_box_ ? NVAR_TEMPORAL_FILTER_FACE_BOX : 0;
@@ -215,7 +196,6 @@ void ExpressionAppUI::showFilterSetting() {
     curr_state_.input_filter |= filter_face_rot_pose_ ? NVAR_TEMPORAL_FILTER_FACE_ROTATIONAL_POSE : 0;
     curr_state_.input_filter |= filter_face_expr_ ? NVAR_TEMPORAL_FILTER_FACIAL_EXPRESSIONS : 0;
     curr_state_.input_filter |= filter_face_gaze_ ? NVAR_TEMPORAL_FILTER_FACIAL_GAZE : 0;
-    curr_state_.input_filter |= filter_enhance_expr_ ? NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS : 0;
 
     if (ImGui::Button("Close")) {
       show_filter_window_ = false;
@@ -471,7 +451,6 @@ void ExpressionAppUI::loadConfgFromFile(const char* filePath) {
   filter_face_rot_pose_ = (curr_state_.input_filter & NVAR_TEMPORAL_FILTER_FACE_ROTATIONAL_POSE) ? true : false;
   filter_face_expr_ = (curr_state_.input_filter & NVAR_TEMPORAL_FILTER_FACIAL_EXPRESSIONS) ? true : false;
   filter_face_gaze_ = (curr_state_.input_filter & NVAR_TEMPORAL_FILTER_FACIAL_GAZE) ? true : false;
-  filter_enhance_expr_ = (curr_state_.input_filter & NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS) ? true : false;
 }
 
 void ExpressionAppUI::openFileLoadSettings() {
@@ -533,7 +512,6 @@ void ExpressionAppUI::closeAppSettings() {
 }
 
 void ExpressionAppUI::CreateUIElements() {
-  showMLPSetting();
   showFilterSetting();
   showExpressionPane();
   showCalibrationSetting();
@@ -590,8 +568,6 @@ void ExpressionAppUI::checkForKeyInput() {
       case 'n':                 curr_state_.calibrate = true;                               break;
       case 'p':                 curr_state_.bargraph_display = !ui_state_.bargraph_display; break;
       case 'f':                 curr_state_.show_fps = !ui_state_.show_fps;                 break;
-      case '1':                 curr_state_.expr_mode = 1;                                  break;
-      case '2':                 curr_state_.expr_mode = 2;                                  break;
       case 'L': case CTL('L'):  filter_face_landmark_ = !filter_face_landmark_;
         curr_state_.input_filter ^= NVAR_TEMPORAL_FILTER_FACIAL_LANDMARKS;                  break;
       case 'N': case CTL('N'):  curr_state_.uncalibrate = true;;                            break;
@@ -601,8 +577,6 @@ void ExpressionAppUI::checkForKeyInput() {
         curr_state_.input_filter ^= NVAR_TEMPORAL_FILTER_FACIAL_EXPRESSIONS;                break;
       case 'G': case CTL('G'):  filter_face_gaze_ = !filter_face_gaze_;
         curr_state_.input_filter ^= NVAR_TEMPORAL_FILTER_FACIAL_GAZE;                       break;
-      case 'C': case CTL('C'):  filter_enhance_expr_ = !filter_enhance_expr_;
-        curr_state_.input_filter ^= NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS;               break;
       default:               // No key
         break;
     }

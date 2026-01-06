@@ -26,7 +26,6 @@
 #include <iostream>
 
 #include "nvARFaceBoxDetection.h"
-#include "nvARFace3DReconstruction.h"
 #include "nvARLandmarkDetection.h"
 #include "renderingUtils.h"
 
@@ -35,46 +34,6 @@ bool CheckResult(NvCV_Status nvErr, unsigned line) {
   std::cout << "ERROR: " << NvCV_GetErrorStringFromCode(nvErr) << ", line " << line << std::endl;
   return false;
 }
-
-FaceEngine::Err FaceEngine::fitFaceModel(cv::Mat& frame) {
-  FaceEngine::Err err = FaceEngine::Err::errNone;
-  NvCV_Status nvErr;
-  if (!frame.empty()) {
-    NvCVImage fxSrcChunkyCPU;
-    (void)NVWrapperForCVMat(&frame, &fxSrcChunkyCPU);
-    NvCV_Status cvErr = NvCVImage_Transfer(&fxSrcChunkyCPU, &inputImageBuffer, 1.0f, stream, NULL);
-
-    if (NVCV_SUCCESS != cvErr) {
-      return errRun;
-    }
-  }
-
-  nvErr = NvAR_Run(faceFitHandle);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errRun);
-
-  if (getAverageLandmarksConfidence() < confidenceThreshold) return FaceEngine::Err::errRun;
-
-bail:
-  return err;
-}
-
-NvAR_FaceMesh* FaceEngine::getFaceMesh() { return face_mesh; }
-
-NvAR_RenderingParams* FaceEngine::getRenderingParams() { return rendering_params; }
-
-float* FaceEngine::getShapeEigenvalues() { return shapeEigenvalues.data(); }
-float* FaceEngine::getExpressionCoefficients() { return expressionCoefficients.data(); }
-int FaceEngine::getNumShapeEigenvalues() {
-  unsigned n = 0;
-  (void)NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(ShapeEigenValueCount), &n);
-  return n;
-}
-int FaceEngine::getNumExpressionCoefficients() {
-  unsigned n = 0;
-  (void)NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(ExpressionCount), &n);
-  return n;
-}
-
 
 FaceEngine::Err FaceEngine::createFeatures(const char* modelPath, unsigned int _batchSize, unsigned int mode) {
   FaceEngine::Err err = FaceEngine::Err::errNone;
@@ -93,11 +52,6 @@ FaceEngine::Err FaceEngine::createFeatures(const char* modelPath, unsigned int _
     err = createLandmarkDetectionFeature(modelPath, _batchSize, stream, mode);
     if (err != Err::errNone) {
       printf("ERROR: An error has occurred while initializing Landmark Detection\n");
-    }
-  } else if (appMode == faceMeshGeneration) {
-    err = createFaceFittingFeature(modelPath, stream, mode);
-    if (err != Err::errNone) {
-      printf("ERROR: An error has occurred while initializing Face Fitting\n");
     }
   }
 
@@ -172,37 +126,6 @@ bail:
   return err;
 }
 
-FaceEngine::Err FaceEngine::createFaceFittingFeature(const char* modelPath, CUstream str, unsigned int mode) {
-  FaceEngine::Err err = FaceEngine::Err::errNone;
-  NvCV_Status nvErr;
-
-  nvErr = NvAR_Create(NvAR_Feature_Face3DReconstruction, &faceFitHandle);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errEffect);
-
-  nvErr = NvAR_SetString(faceFitHandle, NvAR_Parameter_Config(ModelDir), modelPath);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_SetCudaStream(faceFitHandle, NvAR_Parameter_Config(CUDAStream), str);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_SetU32(faceFitHandle, NvAR_Parameter_Config(Landmarks_Size), numLandmarks);  // TODO: Check if nonzero??
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  if (!face_model.empty()) {
-    nvErr = NvAR_SetString(faceFitHandle, NvAR_Parameter_Config(ModelName), face_model.c_str());
-    BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-  }
-
-  nvErr = NvAR_SetU32(faceFitHandle, NvAR_Parameter_Config(Mode), mode);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_Load(faceFitHandle);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errInitialization);
-
-bail:
-  return err;
-}
-
 FaceEngine::Err FaceEngine::initFeatureIOParams() {
   FaceEngine::Err err = FaceEngine::Err::errNone;
 
@@ -219,11 +142,6 @@ FaceEngine::Err FaceEngine::initFeatureIOParams() {
     err = initLandmarkDetectionIOParams(&inputImageBuffer);
     if (err != Err::errNone) {
       printf("ERROR: An error has occured while setting input, output parmeters for Landmark Detection\n");
-    }
-  } else if (appMode == faceMeshGeneration) {
-    err = initFaceFittingIOParams(&inputImageBuffer);
-    if (err != Err::errNone) {
-      printf("ERROR: An error has occured while setting input, output parmeters for Face Fitting\n");
     }
   }
   return err;
@@ -300,84 +218,6 @@ bail:
   return err;
 }
 
-FaceEngine::Err FaceEngine::initFaceFittingIOParams(NvCVImage* inBuf) {
-  NvCV_Status nvErr = NVCV_SUCCESS;
-  FaceEngine::Err err = FaceEngine::Err::errNone;
-
-  face_mesh = new NvAR_FaceMesh();
-
-  unsigned int num_vertices, num_triangles;
-  nvErr = NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(VertexCount), &num_vertices);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(TriangleCount), &num_triangles);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  face_mesh->num_vertices = num_vertices;
-  face_mesh->num_triangles = num_triangles;
-  m_vertices.assign(num_vertices, {0.f, 0.f, 0.f});
-  m_triangles.assign(num_triangles, { 0, 0, 0 });
-  face_mesh->vertices = m_vertices.data();
-  face_mesh->tvi = m_triangles.data();
-  rendering_params = new NvAR_RenderingParams();
-
-  nvErr = NvAR_SetObject(faceFitHandle, NvAR_Parameter_Input(Image), inBuf, sizeof(NvCVImage));
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_SetU32(faceFitHandle, NvAR_Parameter_Input(Width), input_image_width);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_SetU32(faceFitHandle, NvAR_Parameter_Input(Height), input_image_height);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  unsigned int OUTPUT_SIZE_KPTS;
-  nvErr = NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(Landmarks_Size), &OUTPUT_SIZE_KPTS);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  facial_landmarks.assign(batchSize * OUTPUT_SIZE_KPTS, {0.f, 0.f});
-  nvErr =
-      NvAR_SetObject(faceFitHandle, NvAR_Parameter_Output(Landmarks), facial_landmarks.data(), sizeof(NvAR_Point2f));
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  facial_landmarks_confidence.assign(batchSize * OUTPUT_SIZE_KPTS, 0.f);
-  nvErr = NvAR_SetF32Array(faceFitHandle, NvAR_Parameter_Output(LandmarksConfidence),
-                           facial_landmarks_confidence.data(), batchSize * OUTPUT_SIZE_KPTS);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  facial_pose.assign(batchSize, {0.f, 0.f, 0.f, 0.f});
-  nvErr = NvAR_SetObject(faceFitHandle, NvAR_Parameter_Output(Pose), facial_pose.data(), sizeof(NvAR_Quaternion));
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  output_bbox_data.assign(batchSize, {0.f, 0.f, 0.f, 0.f});
-  output_bboxes.boxes = output_bbox_data.data();
-  output_bboxes.max_boxes = (uint8_t)batchSize;
-  output_bboxes.num_boxes = (uint8_t)batchSize;
-  nvErr = NvAR_SetObject(faceFitHandle, NvAR_Parameter_Output(BoundingBoxes), &output_bboxes, sizeof(NvAR_BBoxes));
-
-  nvErr = NvAR_SetObject(faceFitHandle, NvAR_Parameter_Output(FaceMesh), face_mesh, sizeof(NvAR_FaceMesh));
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_SetObject(faceFitHandle, NvAR_Parameter_Output(RenderingParams), rendering_params,
-                         sizeof(NvAR_RenderingParams));
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  unsigned n;
-  nvErr = NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(ShapeEigenValueCount), &n);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-  shapeEigenvalues.resize(n);
-  nvErr = NvAR_SetF32Array(faceFitHandle, NvAR_Parameter_Output(ShapeEigenValues), shapeEigenvalues.data(), n);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-  nvErr = NvAR_GetU32(faceFitHandle, NvAR_Parameter_Config(ExpressionCount), &n);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-  expressionCoefficients.resize(n);
-  nvErr = NvAR_SetF32Array(faceFitHandle, NvAR_Parameter_Output(ExpressionCoefficients), expressionCoefficients.data(), n);
-  BAIL_IF_NVERR(nvErr, err, FaceEngine::Err::errParameter);
-
-bail:
-  return err;
-}
-
 void FaceEngine::destroyFeatures() {
   if (stream) {
     NvAR_CudaStreamDestroy(stream);
@@ -386,7 +226,6 @@ void FaceEngine::destroyFeatures() {
   releaseFeatureIOParams();
   destroyFaceDetectionFeature();
   destroyLandmarkDetectionFeature();
-  destroyFaceFittingFeature();
 }
 
 void FaceEngine::destroyFaceDetectionFeature() {
@@ -401,18 +240,10 @@ void FaceEngine::destroyLandmarkDetectionFeature() {
     landmarkDetectHandle = nullptr;
   }
 }
-void FaceEngine::destroyFaceFittingFeature() {
-  if (faceFitHandle) {
-    (void)NvAR_Destroy(faceFitHandle);
-    faceFitHandle = nullptr;
-  }
-}
-
 void FaceEngine::releaseFeatureIOParams() {
   NvCVImage_Dealloc(&inputImageBuffer);
   releaseFaceDetectionIOParams();
   releaseLandmarkDetectionIOParams();
-  releaseFaceFittingIOParams();
 }
 
 void FaceEngine::releaseFaceDetectionIOParams() {
@@ -425,21 +256,6 @@ void FaceEngine::releaseLandmarkDetectionIOParams() {
   if (!facial_landmarks.empty()) facial_landmarks.clear();
   if (!facial_pose.empty()) facial_pose.clear();
   if (!facial_landmarks_confidence.empty()) facial_landmarks_confidence.clear();
-}
-
-void FaceEngine::releaseFaceFittingIOParams() {
-  if (!output_bbox_data.empty()) output_bbox_data.clear();
-  if (!facial_landmarks.empty()) facial_landmarks.clear();
-  if (!facial_landmarks_confidence.empty()) facial_landmarks_confidence.clear();
-  if (!facial_pose.empty()) facial_pose.clear();
-  if (rendering_params) {
-    delete rendering_params;
-    rendering_params = nullptr;
-  }
-  if (face_mesh) {
-    delete face_mesh;
-    face_mesh = nullptr;
-  }
 }
 
 NvCV_Status FaceEngine::findFaceBoxes(unsigned &num_boxes) {

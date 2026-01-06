@@ -31,7 +31,6 @@
 
 #include "meshRenderer.h"
 #include "nvAR.h"
-#include "nvARFace3DReconstruction.h"
 #include "nvARFaceExpressions.h"
 #include "nvAR_defs.h"
 #include "nvCVOpenCV.h"
@@ -105,8 +104,7 @@
   } while (0)
 
 #define DEFAULT_CODEC "avc1"
-#define DEFAULT_FACE_MODEL "face_model2.nvf"
-#define DEFAULT_RENDER_MODEL "face_model2.nvf"
+#define DEFAULT_RENDER_MODEL "face_model3.nvf"
 #define NUM_CAMERA_INTRINSIC_PARAMS 3
 
 /********************************************************************************
@@ -123,7 +121,6 @@ bool
 std::string
     FLAG_camRes,
     FLAG_codec              = DEFAULT_CODEC,
-    FLAG_fitModel           = DEFAULT_FACE_MODEL,
     FLAG_inFile,
     FLAG_modelDir,
     FLAG_outDir,
@@ -136,12 +133,9 @@ int
                             | NVAR_TEMPORAL_FILTER_FACE_ROTATIONAL_POSE
                             | NVAR_TEMPORAL_FILTER_FACIAL_EXPRESSIONS
                             | NVAR_TEMPORAL_FILTER_FACIAL_GAZE,
-                            //| NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS,
     FLAG_viewMode           = 0xF,                // VIEW_MESH | VIEW_IMAGE | VIEW_PLOT | VIEW_LM
-    FLAG_exprMode           = 2,                  // 1=mesh, 2=MLP
     FLAG_poseMode           = 0,
     FLAG_cheekPuff          = 0,
-    FLAG_gaze               = 0,
     FLAG_logLevel           = NVCV_LOG_ERROR;
 double
     FLAG_fov                = 0.0;                // Orthographic by default
@@ -158,17 +152,12 @@ static void Usage() {
       " --cam_res=[WWWx]HHH         specify resolution as height or width x height\n"
       " --codec=<fourcc>            FOURCC code for the desired codec (default avc1)\n"
       " --debug[=(true|false)]      report debugging info (default false)\n"
-      " --expr_mode=<number>        SDK feature used for generation expressions: 1=Face3DReconstruction, "
-      "2=FaceExpressions (default 2)\n"
       " --pose_mode=<number>        Pose mode used for the FaceExpressions feature only: 0:3DOF, 1:6DOF,\n"
       "                             2:6DOF with dynamic expressions (default 0)\n"
       " --cheekpuff[=(1|0)]         (Experimental) Enable cheek puff blendshapes (default=0)\n"
-      " --face_model=<file>         specify the  face model to be used for fitting (default " DEFAULT_FACE_MODEL
-      ")\n"
       " --filter=<bitfield>         1: face box, 2: landmarks, 4: pose, 16: expressions, 32: gaze,\n"
       "                             256: eye and mouth closure\n"
       "                             (default 55: face box, landmarks, pose, expressions, gaze; no closure)\n"
-      " --gaze=<number>             specify gaze estimation mode 0=implicit, 1=explicit (default 0)\n"
       " --fov=<degrees>             field of view, in degrees; 0 implies orthographic (default 0)\n"
       " --help                      print this message\n"
       " --in=<file>                 specify the input file (default webcam 0)\n"
@@ -200,9 +189,7 @@ static void Usage() {
       " P or ctrl-P - toggle pose filtering\n"
       " E or ctrl-E - toggle expression filtering\n"
       " G or ctrl-G - toggle gaze filtering\n"
-      " C or ctrl-C - toggle closure enhancement\n"
-      " 1           - expressions from mesh fitting\n"
-      " 2           - expressions from DNN\n");
+      " C or ctrl-C - toggle closure enhancement\n");
 }
 
 static bool GetFlagArgVal(const char* flag, const char* arg, const char** val) {
@@ -292,12 +279,9 @@ static int ParseMyArgs(int argc, char** argv) {
                (GetFlagArgVal("cam_res", arg, &FLAG_camRes) ||            //
                 GetFlagArgVal("codec", arg, &FLAG_codec) ||               //
                 GetFlagArgVal("debug", arg, &FLAG_debug) ||               //
-                GetFlagArgVal("expr_mode", arg, &FLAG_exprMode) ||        //
                 GetFlagArgVal("pose_mode", arg, &FLAG_poseMode) ||        //
                 GetFlagArgVal("cheekpuff", arg, &FLAG_cheekPuff) ||       //
-                GetFlagArgVal("face_model", arg, &FLAG_fitModel) ||       //
                 GetFlagArgVal("filter", arg, &FLAG_filter) ||             //
-                GetFlagArgVal("gaze", arg, &FLAG_gaze) ||                 //
                 GetFlagArgVal("fov", arg, &FLAG_fov) ||                   //
                 GetFlagArgVal("in", arg, &FLAG_inFile) ||                 //
                 GetFlagArgVal("in_file", arg, &FLAG_inFile) ||            //
@@ -395,7 +379,6 @@ class App {
   NvCV_Status init();
   NvCV_Status resizeDst();
   NvCV_Status openOutputVideo(int codec, double fps, unsigned width, unsigned height);
-  NvCV_Status initFaceFit();
   NvCV_Status initMLPExpressions();
   NvCV_Status calibrateExpressionWeights();
   NvCV_Status unCalibrateExpressionWeights();
@@ -406,7 +389,6 @@ class App {
   NvCV_Status togglePoseFiltering();
   NvCV_Status toggleExpressionFiltering();
   NvCV_Status toggleGazeFiltering();
-  NvCV_Status toggleClosureEnhancement();
   NvCV_Status togglePoseMode();
   NvCV_Status overlayLandmarks(const float landmarks[126 * 2], unsigned screenHeight, NvCVImage* im);
   void getFPS();
@@ -444,12 +426,12 @@ class App {
   std::vector<NvAR_Vector3f> _vertices;
   std::vector<NvAR_Vector3u16> _triangles;
   unsigned _videoWidth, _videoHeight, _miniWidth, _miniHeight, _renderWidth, _renderHeight, _plotWidth, _plotHeight,
-      _compWidth, _compHeight, _eigenCount, _exprCount, _landmarkCount, _viewMode, _exprMode, _filtering;
+      _compWidth, _compHeight, _eigenCount, _exprCount, _landmarkCount, _viewMode, _filtering;
   unsigned _poseMode = 0;
   bool _enableCheekPuff;
   MeshRendererBroker _broker;
   MeshRenderer* _renderer = nullptr;
-  static const char _windowTitle[], *_exprAbbr[][4], *_sfmExprAbbr[][4];
+  static const char _windowTitle[], *_exprAbbr[][4];
   MyTimer _timer;
   bool _showFPS;
   bool _performCalibration;
@@ -459,10 +441,6 @@ class App {
 #ifdef _ENABLE_UI
   ExpressionAppUI ui_obj_;
 #endif  // _ENABLE_UI
-  enum {
-    EXPR_MODE_MESH = 1,
-    EXPR_MODE_MLP = 2,
-  };
   enum { VIEW_MESH = (1 << 0), VIEW_IMAGE = (1 << 1), VIEW_PLOT = (1 << 2), VIEW_LM = (1 << 3) };
   enum {
     APP_ERR_GENERAL = 1,
@@ -484,7 +462,6 @@ class App {
     APP_ERR_RENDER_INIT,
     APP_ERR_GL_RESOURCE,
     APP_ERR_GL_GENERAL,
-    APP_ERR_FACE_FIT,
     APP_ERR_NO_FACE,
     APP_ERR_CANCEL,
     APP_ERR_CAMERA,
@@ -547,10 +524,6 @@ const char* App::_exprAbbr[][4] = {
     {"MOUT", "UPPR", "UP", "RIGHT"},    // 50 mouthUpperUp_R
     {"NOSE", "SNER", "LEFT", NULL},     // 51 noseSneer_L
     {"NOSE", "SNER", "RIGHT", NULL},    // 52 noseSneer_R
-};
-const char* App::_sfmExprAbbr[][4] = {
-    {"ANGER", NULL, NULL, NULL}, {"DISGUST", NULL, NULL, NULL}, {"FEAR", NULL, NULL, NULL},
-    {"HAPPY", NULL, NULL, NULL}, {"SAD", NULL, NULL, NULL},     {"SURPRISE", NULL, NULL, NULL},
 };
 
 NvCV_Status App::setInputVideo(const std::string& file) {
@@ -657,7 +630,6 @@ const char* App::getErrorStringFromCode(NvCV_Status err) {
         {APP_ERR_RENDER_INIT, "Error initializing the renderer"},
         {APP_ERR_GL_RESOURCE, "OpenGL resource error"},
         {APP_ERR_GL_GENERAL, "General OpenGL error"},
-        {APP_ERR_FACE_FIT, "Face fit error"},
         {APP_ERR_NO_FACE, "No face was found"},
         {APP_ERR_CANCEL, "The operation has been canceled"},
         {APP_ERR_CAMERA, "Camera error"},
@@ -681,77 +653,12 @@ NvCV_Status ResizeNvCVImage(const NvCVImage* src, NvCVImage* dst) {
   return NVCV_SUCCESS;
 }
 
-NvCV_Status App::initFaceFit() {
-  unsigned modelLandmarks = 126, n;
-  NvCV_Status err;
-
-  // Initialize AR effect
-  if (_featureHan) {
-    if (EXPR_MODE_MESH == _exprMode) return NVCV_SUCCESS;
-    NvAR_Destroy(_featureHan);
-    _featureHan = nullptr;
-  }
-  BAIL_IF_ERR(err = NvAR_Create(NvAR_Feature_Face3DReconstruction, &_featureHan));
-  if (!FLAG_modelDir.empty())
-    BAIL_IF_ERR(err = NvAR_SetString(_featureHan, NvAR_Parameter_Config(ModelDir), FLAG_modelDir.c_str()));
-  if (!FLAG_fitModel.empty()) {
-    BAIL_IF_ERR(err = NvAR_SetString(_featureHan, NvAR_Parameter_Config(ModelName), FLAG_fitModel.c_str()));
-    if (FLAG_fitModel[FLAG_fitModel.size() - 5] == '0')  // face model 0 has 68 landmarks, the others have 126
-      modelLandmarks = 68;
-  }
-  BAIL_IF_ERR(err = NvAR_SetU32(_featureHan, NvAR_Parameter_Config(Landmarks_Size), modelLandmarks));
-  BAIL_IF_ERR(err = NvAR_SetCudaStream(_featureHan, NvAR_Parameter_Config(CUDAStream), _stream));
-  BAIL_IF_ERR(err = NvAR_SetU32(_featureHan, NvAR_Parameter_Config(Temporal), _filtering));
-  BAIL_IF_ERR(err = NvAR_SetU32(_featureHan, NvAR_Parameter_Config(GazeMode), FLAG_gaze));
-  BAIL_IF_ERR(err = NvAR_Load(_featureHan));
-  BAIL_IF_ERR(err = NvAR_GetU32(_featureHan, NvAR_Parameter_Config(ShapeEigenValueCount), &_eigenCount));
-  _eigenvalues.resize(_eigenCount);
-  _outputBboxData.assign(25, {0.f, 0.f, 0.f, 0.f});
-  _outputBboxes.boxes = _outputBboxData.data();
-  _outputBboxes.max_boxes = (uint8_t)_outputBboxData.size();
-  _outputBboxes.num_boxes = 0;
-  BAIL_IF_ERR(
-      err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(BoundingBoxes), &_outputBboxes, sizeof(NvAR_BBoxes)));
-  BAIL_IF_ERR(err = NvAR_GetU32(_featureHan, NvAR_Parameter_Config(Landmarks_Size), &_landmarkCount));
-  _landmarks.resize(_landmarkCount);
-  BAIL_IF_ERR(
-      err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(Landmarks), _landmarks.data(), sizeof(NvAR_Point2f)));
-  _landmarkConfidence.resize(_landmarkCount);
-  BAIL_IF_ERR(err = NvAR_SetF32Array(_featureHan, NvAR_Parameter_Output(LandmarksConfidence),
-                                     _landmarkConfidence.data(), _landmarkCount));
-  BAIL_IF_ERR(err = NvAR_GetU32(_featureHan, NvAR_Parameter_Config(ExpressionCount), &_exprCount));
-  _expressions.resize(_exprCount, 0.0f);
-  _expressionZeroPoint.resize(_exprCount, 0.0f);
-  _expressionScale.resize(_exprCount, 1.0f);
-  _expressionExponent.resize(_exprCount, 1.0f);
-  BAIL_IF_ERR(err = NvAR_SetF32Array(_featureHan, NvAR_Parameter_Output(ExpressionCoefficients), _expressions.data(),
-                                     _exprCount));
-  BAIL_IF_ERR(
-      err = NvAR_SetF32Array(_featureHan, NvAR_Parameter_Output(ShapeEigenValues), _eigenvalues.data(), _eigenCount));
-  BAIL_IF_ERR(err = NvAR_SetObject(_featureHan, NvAR_Parameter_Input(Image), &_srcGpu, sizeof(NvCVImage)));
-  BAIL_IF_ERR(err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(Pose), &_pose, sizeof(_pose.rotation)));
-  // The following are not used, but apparently required
-  BAIL_IF_ERR(err = NvAR_GetU32(_featureHan, NvAR_Parameter_Config(VertexCount), &n));
-  _vertices.resize(_arMesh.num_vertices = n);
-  _arMesh.vertices = &_vertices[0];
-  BAIL_IF_ERR(err = NvAR_GetU32(_featureHan, NvAR_Parameter_Config(TriangleCount), &n));
-  _triangles.resize(_arMesh.num_triangles = n);
-  _arMesh.tvi = &_triangles[0];
-  BAIL_IF_ERR(err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(FaceMesh), &_arMesh, sizeof(_arMesh)));
-  BAIL_IF_ERR(
-      err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(RenderingParams), &_renderParams, sizeof(_renderParams)));
-  _exprMode = EXPR_MODE_MESH;
-bail:
-  return err;
-}
-
 NvCV_Status App::initMLPExpressions() {
   const unsigned landmarkCount = 126;
   NvCV_Status err;
 
   // Initialize AR effect
   if (_featureHan) {
-    if (EXPR_MODE_MLP == _exprMode) return NVCV_SUCCESS;
     NvAR_Destroy(_featureHan);
     _featureHan = nullptr;
   }
@@ -796,8 +703,6 @@ NvCV_Status App::initMLPExpressions() {
   BAIL_IF_ERR(err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(Pose), &_pose.rotation, sizeof(NvAR_Quaternion)));
   BAIL_IF_ERR(err = NvAR_SetObject(_featureHan, NvAR_Parameter_Output(PoseTranslation), &_pose.translation,
                                    sizeof(NvAR_Vector3f)));
-
-  _exprMode = EXPR_MODE_MLP;
 
 bail:
   return err;
@@ -875,7 +780,6 @@ NvCV_Status App::init() {
   _showFPS = false;
   _performCalibration = false;
   _frameTime = 0.f;
-  _exprMode = 0;
   _poseMode = FLAG_poseMode;
   _enableCheekPuff = FLAG_cheekPuff;
   _featureHan = nullptr;
@@ -939,23 +843,12 @@ NvCV_Status App::init() {
     }
   }
 
-  // Initialize AR effect
-  switch (FLAG_exprMode) {
-    default:
-      printf("Unknown expression mode %u; using 1=mesh instead\n", FLAG_exprMode);
-      /* fall through */
-    case EXPR_MODE_MESH:
-      BAIL_IF_ERR(err = initFaceFit());
-      break;
-    case EXPR_MODE_MLP:
-      BAIL_IF_ERR(err = initMLPExpressions());
-      break;
-  }
+  BAIL_IF_ERR(err = initMLPExpressions());
 
   if (FLAG_show) cv::namedWindow(_windowTitle, 1);
 
 #if _ENABLE_UI
-  if (FLAG_showUI) ui_obj_.init(_exprCount, _filtering, FLAG_exprMode, _viewMode, _showFPS);
+  if (FLAG_showUI) ui_obj_.init(_exprCount, _filtering, _viewMode, _showFPS);
 #endif  // _ENABLE_UI
 
 bail:
@@ -989,14 +882,13 @@ NvCV_Status App::run() {
     }
 
 #ifdef _ENABLE_UI
-    unsigned int exprMode = 0;
     bool uncalibrate = false;
     bool calibrate = false;
     unsigned int filter = 0;
     unsigned int viewMode = 0;
     bool killApp = false;
     if (FLAG_showUI) {
-      ui_obj_.stateQuerybyCore(viewMode, exprMode, filter, calibrate, uncalibrate, _showFPS, _globalExpressionParam,
+      ui_obj_.stateQuerybyCore(viewMode, filter, calibrate, uncalibrate, _showFPS, _globalExpressionParam,
                                _expressionZeroPoint, _expressionScale, _expressionExponent, killApp);
 
       if (killApp == true) {
@@ -1026,20 +918,7 @@ NvCV_Status App::run() {
       if ((filter ^ _filtering) & NVAR_TEMPORAL_FILTER_FACIAL_GAZE) {
         toggleGazeFiltering();
       }
-      if ((filter ^ _filtering) & NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS) {
-        toggleClosureEnhancement();
-      }
       _filtering = filter;
-
-      if (_exprMode != exprMode) {
-        if (exprMode == EXPR_MODE_MESH) {
-          initFaceFit();
-        } else if (exprMode == EXPR_MODE_MLP) {
-          initMLPExpressions();
-        } else {
-          // add more modes if needed
-        }
-      }
     }
 #endif  // _ENABLE_UI
 
@@ -1130,12 +1009,6 @@ NvCV_Status App::run() {
         case 'f':
           _showFPS = !_showFPS;
           break;
-        case '1':
-          initFaceFit();
-          break;
-        case '2':
-          initMLPExpressions();
-          break;
         case 'L':
         case CTL('L'):
           toggleLandmarkFiltering();
@@ -1155,10 +1028,6 @@ NvCV_Status App::run() {
         case 'G':
         case CTL('G'):
           toggleGazeFiltering();
-          break;
-        case 'C':
-        case CTL('C'):
-          toggleClosureEnhancement();
           break;
         case 'M':
         case CTL('M'):
@@ -1214,7 +1083,7 @@ void App::barPlotExprs() {
   cv::Rect r;
   cv::Point pt;
   std::string str;
-  const char*(*exprAbbr)[4] = (_expressions.size() > 6) ? _exprAbbr : _sfmExprAbbr;
+  const char*(*exprAbbr)[4] = _exprAbbr;
 
   bgColor = {0, 0, 0, 255};
   r = {_plotX, _plotY, (int)_plotWidth, (int)_plotHeight};
@@ -1241,7 +1110,7 @@ void App::barPlotExprs() {
 }
 
 void App::plotEyeLocations() {
-  if (_poseMode > 0 && _exprMode == 2 && !_landmarks3d.empty()) {
+  if (_poseMode > 0 && !_landmarks3d.empty()) {
     const NvAR_Point3f& right_eye = _landmarks3d[80];
     const NvAR_Point3f& left_eye = _landmarks3d[97];
     std::string text = "Left";
@@ -1323,15 +1192,6 @@ NvCV_Status App::toggleGazeFiltering() {
   return err;
 }
 
-NvCV_Status App::toggleClosureEnhancement() {
-  _filtering ^= NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS;
-  NvCV_Status err = NvAR_SetU32(_featureHan, NvAR_Parameter_Config(Temporal), _filtering);
-  if (NVCV_SUCCESS == err) err = NvAR_Load(_featureHan);
-  if (FLAG_verbose)
-    printf("Closure Enhancement %s\n", ((_filtering & NVAR_TEMPORAL_FILTER_ENHANCE_EXPRESSIONS) ? "ON" : "OFF"));
-  return err;
-}
-
 NvCV_Status App::togglePoseMode() {
   _poseMode = !_poseMode;
   NvCV_Status err = NvAR_SetU32(_featureHan, NvAR_Parameter_Config(PoseMode), _poseMode);
@@ -1360,7 +1220,6 @@ int main(int argc, char** argv) {
   if (NVCV_SUCCESS != err)
     printf("%s: while configuring logger to \"%s\"\n", NvCV_GetErrorStringFromCode(err), FLAG_log.c_str());
 
-  if (FLAG_fitModel.empty()) FLAG_fitModel = DEFAULT_FACE_MODEL;
   if (FLAG_renderModel.empty()) FLAG_renderModel = DEFAULT_RENDER_MODEL;
   if (FLAG_modelDir.empty()) {
     do {
@@ -1397,7 +1256,6 @@ int main(int argc, char** argv) {
     FLAG_show = true;
   }
   if (FLAG_verbose) printf("Enabled filters = %x\n", FLAG_filter);
-  if (FLAG_verbose) printf("Enabled cnn gaze = %x\n", FLAG_gaze);
   err = app.init();
   BAIL_IF_ERR(err);
 

@@ -55,7 +55,6 @@ enum {
 struct ExpressionState {
   int                           input_filter;
   float                         global_parameter;
-  int                           expr_mode;
   unsigned long                 counter;
   bool                          calibrate;
   bool                          uncalibrate;
@@ -73,7 +72,6 @@ struct ExpressionState {
     input_filter = -1;
     counter = 0;
     global_parameter = 1.0f;
-    expr_mode = 1;
     calibrate = false;
     uncalibrate = false;
     landmark_display = false;
@@ -88,10 +86,10 @@ struct ExpressionState {
 class ExpressionAppUI {
 public:
   //============= State Management =================
-  void init(int numExpr, int filter, int exprMode, int display, int showFPS);
+  void init(int numExpr, int filter, int display, int showFPS);
   void cleanup();
   
-  void stateQuerybyCore(unsigned int& displayMode, unsigned int& exprMode, unsigned int& filter, bool& calibrate, bool& uncalibrate, bool& showFPS,
+  void stateQuerybyCore(unsigned int& displayMode, unsigned int& filter, bool& calibrate, bool& uncalibrate, bool& showFPS,
      float& globalParam, std::vector<float>& expressionOffset, std::vector<float>& expressionScale, std::vector<float>& expressionExponent, bool& killApp);
   void stateSetbyCore(std::vector<float> expression,
     std::vector<float> expressionOffset, std::vector<float> expressionScale, std::vector<float> expressionExponent, bool isCalibrated = false, int key = -1);
@@ -124,8 +122,7 @@ private:
   bool filter_face_rot_pose_;
   bool filter_face_expr_;
   bool filter_face_gaze_;
-  bool filter_enhance_expr_;
-
+  
   //================= Expression ===================
   bool show_expr_;
   bool brow_expr_;
