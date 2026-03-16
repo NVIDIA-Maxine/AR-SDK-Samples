@@ -386,13 +386,21 @@ bool ReadWavFile(const std::string& filename, uint32_t expected_sample_rate, int
     }
 
     if (enable_debug) {
-      std::cout << "Total number of samples: " << wave_file->GetNumSamples() << std::endl;
-      std::cout << "Size in bytes: " << wave_file->GetRawPCMDataSizeInBytes() << std::endl;
-      std::cout << "Sample rate: " << wave_file->GetSampleRate() << std::endl;
-      std::cout << "Number of Channels : " << wave_file->GetWaveFormat().nChannels << std::endl;
+      try {
+        std::cout << "Total number of samples: " << wave_file->GetNumSamples() << std::endl;
+        std::cout << "Size in bytes: " << wave_file->GetRawPCMDataSizeInBytes() << std::endl;
+        std::cout << "Sample rate: " << wave_file->GetSampleRate() << std::endl;
+        std::cout << "Number of Channels : " << wave_file->GetWaveFormat().nChannels << std::endl;
 
-      auto bits_per_sample = wave_file->GetBitsPerSample();
-      std::cout << "Bits/sample: " << bits_per_sample << std::endl;
+        auto bits_per_sample = wave_file->GetBitsPerSample();
+        std::cout << "Bits/sample: " << bits_per_sample << std::endl;
+      } catch (const std::exception& e) {
+        std::cerr << "ERROR: Exception in ReadWavFile(): " << e.what() << std::endl;
+        return false;
+      } catch (...) {
+        std::cerr << "ERROR: Unknown exception in ReadWavFile()" << std::endl;
+        return false;
+      }
     }
 
     if (wave_file->GetSampleRate() != expected_sample_rate) {

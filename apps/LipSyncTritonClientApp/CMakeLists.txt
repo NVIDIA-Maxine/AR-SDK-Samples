@@ -23,6 +23,15 @@
 # LipSyncTritonClientApp #
 ##########################
 
+set(REQUIRED_FEATURES nvARLipSync:1.1.0.0 nvARLandmarkDetection:1.1.0.0 nvARFaceBoxDetection:1.1.0.0 nvARFaceExpressions:1.1.0.0)
+foreach(REQUIRED_FEATURE_AND_VERSION IN LISTS REQUIRED_FEATURES)
+  verify_app_feature_dependency(${REQUIRED_FEATURE_AND_VERSION} RESULT)
+  if(NOT RESULT)
+    message(${SAMPLES_DEPS_ERROR_LEVEL} "Skipping LipSyncTritonClientApp.")
+    return()
+  endif()
+endforeach()
+
 set(RUN_FILES
   run_lipsynctritonclientapp_offline.sh
   fix_metadata.sh

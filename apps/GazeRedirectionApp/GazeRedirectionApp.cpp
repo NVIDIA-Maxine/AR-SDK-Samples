@@ -692,10 +692,7 @@ void DoApp::drawLandmarkPointsWithConfidence(const cv::Mat& src, const NvAR_Poin
                                              const float* facial_landmark_confidences, const int numLandmarks) {
   if (!facial_landmarks) return;
   cv::Mat frm;
-  if (FLAG_offlineMode)
-    frm = src;
-  else
-    frm = src;
+  frm = src;
   cv::Scalar color(0, 0, 255);
   NvAR_Point2f *pt, *endPt;
   int i = 0;
@@ -714,10 +711,7 @@ void DoApp::drawLandmarkPoints(const cv::Mat& src, NvAR_Point2f* facial_landmark
                                cv::Scalar color = cv::Scalar(0, 0, 255)) {
   if (!facial_landmarks) return;
   cv::Mat frm;
-  if (FLAG_offlineMode)
-    frm = src;
-  else
-    frm = src;
+  frm = src;
   NvAR_Point2f *pt, *endPt;
   for (endPt = (pt = (NvAR_Point2f*)facial_landmarks) + numLandmarks; pt < endPt; ++pt)
     cv::circle(frm, cv::Point(lround(pt->x), lround(pt->y)), 1, color, -1);

@@ -105,6 +105,7 @@ if(NOT TARGET nvARPose)
       nppc
       nppif
       nppig
+      nppist
     )
 
     set(CUDA_LIB_VARIABLES
@@ -114,6 +115,7 @@ if(NOT TARGET nvARPose)
       CUDA_NPPC_LIBRARY
       CUDA_NPPIF_LIBRARY
       CUDA_NPPIG_LIBRARY
+      CUDA_NPPIST_LIBRARY
     )
 
     set(CUDA_LIB_PATHS
@@ -143,7 +145,7 @@ if(NOT TARGET nvARPose)
     )
 
     # Create CUDA target if libraries are found
-    if(CUDA_CUDA_LIBRARY OR CUDA_CUDART_LIBRARY OR CUDA_CURAND_LIBRARY OR CUDA_NPPC_LIBRARY OR CUDA_NPPIF_LIBRARY OR CUDA_NPPIG_LIBRARY)
+    if(CUDA_CUDA_LIBRARY OR CUDA_CUDART_LIBRARY OR CUDA_CURAND_LIBRARY OR CUDA_NPPC_LIBRARY OR CUDA_NPPIF_LIBRARY OR CUDA_NPPIG_LIBRARY OR CUDA_NPPIST_LIBRARY)
       if(NOT TARGET CUDA_LIBS)
         add_library(CUDA_LIBS INTERFACE)
       endif()
@@ -166,6 +168,9 @@ if(NOT TARGET nvARPose)
       endif()
       if(CUDA_NPPIG_LIBRARY)
         target_link_libraries(CUDA_LIBS INTERFACE ${CUDA_NPPIG_LIBRARY})
+      endif()
+      if(CUDA_NPPIST_LIBRARY)
+        target_link_libraries(CUDA_LIBS INTERFACE ${CUDA_NPPIST_LIBRARY})
       endif()
 
     endif()

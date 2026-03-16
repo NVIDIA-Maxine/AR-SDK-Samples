@@ -378,7 +378,7 @@ void DoApp::processKey(int key) {
       face_ar_engine.createFeatures(FLAG_modelPath.c_str());
       face_ar_engine.initFeatureIOParams();
       break;
-    case '2':  
+    case '2':
       face_ar_engine.destroyFeatures();
       face_ar_engine.setAppMode(FaceEngine::mode::landmarkDetection);
       face_ar_engine.createFeatures(FLAG_modelPath.c_str());
@@ -410,8 +410,15 @@ DoApp::Err DoApp::initFaceEngine(const char* modelPath, bool isNumLandmarks126, 
 
   int numLandmarkPoints = isNumLandmarks126 ? 126 : 68;
   face_ar_engine.setNumLandmarks(numLandmarkPoints);
-
-  nvErr = face_ar_engine.createFeatures(modelPath, batchSize, mode);
+  try {
+    nvErr = face_ar_engine.createFeatures(modelPath, batchSize, mode);
+  } catch (const std::exception& e) {
+    std::cerr << "ERROR: Exception in initFaceEngine(): " << e.what() << std::endl;
+    return errGeneral;
+  } catch (...) {
+    std::cerr << "ERROR: Unknown exception in initFaceEngine()" << std::endl;
+    return errGeneral;
+  }
   if (nvErr != FaceEngine::Err::errNone) {
     face_ar_engine.setAppMode(FaceEngine::mode::landmarkDetection);
     nvErr = face_ar_engine.createFeatures(modelPath, batchSize, mode);
@@ -517,8 +524,15 @@ void DoApp::writeEstResults(std::ofstream& outputFile, NvAR_BBoxes output_bboxes
   int landmarkDetectOn = (face_ar_engine.appMode == FaceEngine::mode::landmarkDetection)
                              ? 1
                              : 0;
-  outputFile << faceDetectOn << "," << landmarkDetectOn << "\n";
-
+  try {
+    outputFile << faceDetectOn << "," << landmarkDetectOn << "\n";
+  } catch (const std::exception& e) {
+    std::cerr << "ERROR: Exception in writeEstResults(): " << e.what() << std::endl;
+    return;
+  } catch (...) {
+    std::cerr << "ERROR: Unknown exception in writeEstResults()" << std::endl;
+    return;
+  }
   if (faceDetectOn && output_bboxes.num_boxes) {
     // Append number of faces detected in the current frame
     outputFile << unsigned(output_bboxes.num_boxes) << ",";
@@ -961,7 +975,7 @@ int main(int argc, char** argv) {
   }
   BAIL_IF_ERR(doErr);
 
-  if ((FLAG_landmarkMode < 0) || (FLAG_landmarkMode > 1)) {
+  if (FLAG_landmarkMode > 1) {
     doErr = DoApp::errParameter;
     printf("ERROR: %s, Please Select Either Mode 0 or 1! \n", app.errorStringFromCode(doErr));
   }

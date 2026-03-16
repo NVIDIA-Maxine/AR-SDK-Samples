@@ -247,13 +247,13 @@ class GazeEngine {
     lookAwayIntervalRange = 250;
     lookAwayIntervalMin = 100;
     gazePitchThresholdLow = 20.0;
-    gazePitchThresholdHigh = 25.0;
-    gazeYawThresholdLow = 30.0;
-    gazeYawThresholdHigh = 35.0;
-    headPitchThresholdLow = 25.0;
-    headPitchThresholdHigh = 30.0;
-    headYawThresholdLow = 30.0;
-    headYawThresholdHigh = 35.0;
+    gazePitchThresholdHigh = 30.0;
+    gazeYawThresholdLow = 20.0;
+    gazeYawThresholdHigh = 30.0;
+    headPitchThresholdLow = 15.0;
+    headPitchThresholdHigh = 25.0;
+    headYawThresholdLow = 25.0;
+    headYawThresholdHigh = 30.0;
   }
 };
 #endif

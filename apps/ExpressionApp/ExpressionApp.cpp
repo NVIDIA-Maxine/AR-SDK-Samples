@@ -555,8 +555,12 @@ NvCV_Status App::setInputCamera(int index, const std::string& resStr) {
         width = 0;
         break;
     }
-    if (width) _vidIn.set(CV_CAP_PROP_FRAME_WIDTH, width);
-    if (height) _vidIn.set(CV_CAP_PROP_FRAME_HEIGHT, height);
+    if (width && !_vidIn.set(CV_CAP_PROP_FRAME_WIDTH, width)) {
+      return NvFromAppErr(APP_ERR_VIDEO);
+    }
+    if (height && !_vidIn.set(CV_CAP_PROP_FRAME_HEIGHT, height)) {
+      return NvFromAppErr(APP_ERR_VIDEO);
+    }
     _inFile = "webcam";
     _inFile += std::to_string(index);
   }
@@ -876,7 +880,9 @@ NvCV_Status App::run() {
     if (!_vidIn.read(_ocvSrcImg) || _ocvSrcImg.empty()) {
       if (!frameCount) return NvFromAppErr(APP_ERR_VIDEO);  // No frames in video
       if (!FLAG_loop) return NvFromAppErr(APP_ERR_EOF);     // Video has completed
-      _vidIn.set(CV_CAP_PROP_POS_FRAMES, 0);                // Rewind, because loop mode has been selected
+      if (!_vidIn.set(CV_CAP_PROP_POS_FRAMES, 0)) {         // Rewind, because loop mode has been selected
+        return NvFromAppErr(APP_ERR_VIDEO);                 // Failed to rewind video
+      }
       --frameCount;                                         // Account for the wasted frame
       continue;                                             // Read the first frame again
     }
@@ -960,7 +966,7 @@ NvCV_Status App::run() {
                                             &_renderImg));  // GL _renderImg is upside down
         NvCVImage_InitView(&view, &_compImg, _renderX, _renderY, _renderWidth, _renderHeight);
         NvCVImage_FlipY(&view, &view);  // Since OpenGL renderImg is upside-down, we copy it to a flipped dst
-        NvCVImage_Transfer(&_renderImg, &view, 1.0f, _stream, nullptr);  // VFlip RGBA --> BGR
+        BAIL_IF_ERR(err = NvCVImage_Transfer(&_renderImg, &view, 1.0f, _stream, nullptr));  // VFlip RGBA --> BGR
       } else {
         cv::Mat compImgCVMat;
         CVWrapperForNvCVImage(&_compImg, &compImgCVMat);

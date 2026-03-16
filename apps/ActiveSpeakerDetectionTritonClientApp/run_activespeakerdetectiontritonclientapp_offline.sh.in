@@ -1,0 +1,27 @@
+#!/bin/bash
+
+. ./setup_env.sh
+
+# Check if required arguments are present
+if [ -z "$(echo "$*" | grep "\-\-src_videos")" ] || [ -z "$(echo "$*" | grep "\-\-src_audios")" ]; then
+    echo "Error: Missing required arguments"
+    echo "Usage:"
+    echo "./run_activespeakerdetectiontritonclientapp_offline.sh --src_videos=video0.mp4[,video1.mp4,...] --src_audios=audio0_0.wav+audio0_1.wav[,audio1_0.wav,...] [--verbose]"
+    echo ""
+    echo "Arguments:"
+    echo "  --src_videos=<v0,v1,...>                  Comma separated list of video files"
+    echo "  --src_audios=<v0_a0+v0_a1,v1_a0,...>      Audio files per video. Comma separates videos,"
+    echo "                                             '+' separates audio tracks within each video."
+    echo "                                             Example: 'audio0_0.wav+audio0_1.wav,audio1_0.wav'"
+    echo "                                             means video0 has 2 audio tracks, video1 has 1 audio track."
+    echo "Options:"
+    echo "  --verbose                                  Print detailed processing information"
+    exit 1
+fi
+
+# Run ActiveSpeakerDetection triton client app
+./ActiveSpeakerDetectionTritonClientApp --output_codec=mp4v --output_format=mp4 "$@"
+if [ $? -ne 0 ]; then
+    echo ActiveSpeakerDetectionTritonClientApp failed
+    exit 1
+fi

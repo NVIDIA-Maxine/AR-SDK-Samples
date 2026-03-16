@@ -1,4 +1,4 @@
-﻿# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: MIT
 #
 # Permission is hereby granted, free of charge, to any person obtaining a
@@ -19,29 +19,32 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-############################
-# FaceTrackTritonClientApp #
-############################
+#########################################
+# ActiveSpeakerDetectionTritonClientApp #
+#########################################
 
-set(REQUIRED_FEATURES nvARLandmarkDetection:1.1.0.0 nvARFaceBoxDetection:1.1.0.0)
+set(REQUIRED_FEATURES nvARActiveSpeakerDetection:1.1.0.0)
 foreach(REQUIRED_FEATURE_AND_VERSION IN LISTS REQUIRED_FEATURES)
   verify_app_feature_dependency(${REQUIRED_FEATURE_AND_VERSION} RESULT)
   if(NOT RESULT)
-    message(${SAMPLES_DEPS_ERROR_LEVEL} "Skipping FaceTrackTritonClientApp.")
+    message(${SAMPLES_DEPS_ERROR_LEVEL} "Skipping ActiveSpeakerDetectionTritonClientApp.")
     return()
   endif()
 endforeach()
 
 set(RUN_FILES
-  run_facetracktritonclientapp_offline.sh
+  run_activespeakerdetectiontritonclientapp_offline.sh
   setup_env.sh)
 
-set(FACETRACKTRITONCLIENT_SRCS
-  FaceTrackTritonClientApp.cpp
+set(SPEAKERDETECTIONTRITONCLIENTAPP_SRCS
+  ActiveSpeakerDetectionTritonClientApp.cpp
   ${ARSDKSampleApps_utils_DIR}/batchUtilities.cpp
   ${ARSDKSampleApps_utils_DIR}/batchUtilities.h
+  ${ARSDKSampleApps_utils_DIR}/waveReadWrite.cpp
+  ${ARSDKSampleApps_utils_DIR}/waveReadWrite.h
+  ${ARSDKSampleApps_utils_DIR}/wave.h
 )
-add_executable(FaceTrackTritonClientApp README.md ${FACETRACKTRITONCLIENT_SRCS})
+add_executable(ActiveSpeakerDetectionTritonClientApp README.md ${SPEAKERDETECTIONTRITONCLIENTAPP_SRCS})
 
 if(TARGET OpenCV)
   set(OPENCV OpenCV)
@@ -49,25 +52,19 @@ else()
   set(OPENCV opencv346)
 endif()
 
-target_link_libraries(FaceTrackTritonClientApp PRIVATE
+target_link_libraries(ActiveSpeakerDetectionTritonClientApp PRIVATE
   ${OPENCV}
   ${CMAKE_DL_LIBS}
   nvARPose
   NVCVImage
 )
 
-target_include_directories(FaceTrackTritonClientApp PRIVATE
+target_include_directories(ActiveSpeakerDetectionTritonClientApp PRIVATE
   ${ARSDKSampleApps_utils_DIR}
   ${OpenCV_INCLUDE_DIRS}
 )
 
-# Link to feature interface targets if available (from FindARSDK.cmake)
-if(TARGET nvARFaceBoxDetection)
-  target_link_libraries(FaceTrackTritonClientApp PRIVATE nvARFaceBoxDetection)
-endif()
-if(TARGET nvARLandmarkDetection)
-  target_link_libraries(FaceTrackTritonClientApp PRIVATE nvARLandmarkDetection)
-endif()
+target_link_libraries(ActiveSpeakerDetectionTritonClientApp PRIVATE nvARActiveSpeakerDetection)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
 
@@ -80,16 +77,18 @@ foreach(RUN_FILE IN LISTS RUN_FILES)
   configure_file(${RUN_FILE}.in ${CMAKE_CURRENT_BINARY_DIR}/tmp/${RUN_FILE} @ONLY)
   file(COPY ${CMAKE_CURRENT_BINARY_DIR}/tmp/${RUN_FILE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/run_files FILE_PERMISSIONS OWNER_EXECUTE OWNER_READ OWNER_WRITE)
   file(REMOVE_RECURSE ${CMAKE_CURRENT_BINARY_DIR}/tmp/)
-  add_custom_command(TARGET FaceTrackTritonClientApp POST_BUILD
+  add_custom_command(TARGET ActiveSpeakerDetectionTritonClientApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${CMAKE_CURRENT_BINARY_DIR}/run_files/${RUN_FILE}
-    $<TARGET_FILE_DIR:FaceTrackTritonClientApp>)
+    $<TARGET_FILE_DIR:ActiveSpeakerDetectionTritonClientApp>)
 endforeach()
 
 # Add resources and README.md file
-add_custom_command(TARGET FaceTrackTritonClientApp POST_BUILD
+add_custom_command(TARGET ActiveSpeakerDetectionTritonClientApp POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-  ${ARSDKSampleApps_RESOURCES_DIR}/faceTrack.mp4
   ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-  $<TARGET_FILE_DIR:FaceTrackTritonClientApp>
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleVideo.mp4
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio0.wav
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio1.wav
+  $<TARGET_FILE_DIR:ActiveSpeakerDetectionTritonClientApp>
 )

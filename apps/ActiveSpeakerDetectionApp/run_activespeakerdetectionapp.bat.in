@@ -1,0 +1,10 @@
+SETLOCAL
+SET "PATH=@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;%PATH%"
+
+ActiveSpeakerDetectionApp.exe ^
+  --model_path="@NVAR_MODEL_DIR@" ^
+  --in_video=activeSpeakerDetectionSampleVideo.mp4 ^
+  --in_audios=activeSpeakerDetectionSampleAudio0.wav,activeSpeakerDetectionSampleAudio1.wav ^
+  --out_video=activeSpeakerDetectionOutput.mp4 ^
+  --verbose ^
+  %*

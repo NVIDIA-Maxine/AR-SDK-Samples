@@ -16,7 +16,7 @@ In the sample app offline mode, you can ignore the error message "Could not open
 
 Required Features
 -----------------
-This app requires the following features to be installed. Make sure to install them using *install_features.ps1* (Windows) or *install_features.sh* (Linux) in your AR SDK features directory before building it.
+This app requires the following features to be installed. Make sure to install them using *install_feature.ps1* (Windows) or *install_feature.sh* (Linux) in your AR SDK features directory before building it.
 - nvARFaceExpressions
 - nvARLandmarkDetection
 - nvARFaceBoxDetection

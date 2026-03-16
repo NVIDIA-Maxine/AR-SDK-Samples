@@ -22,6 +22,8 @@
  */
 
 #include "faceIO.h"
+#include <algorithm>
+#include <limits>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,7 +31,6 @@
 #include <stack>
 #include <string>
 #include <vector>
-#include <limits.h>
 
 #ifdef _MSC_VER
     #define strcasecmp  _stricmp
@@ -1332,7 +1333,7 @@ bail:
 
 static size_t SafeRead(void *ptr, size_t size, size_t num, FILE *fd) {
   if (ptr) return(fread(ptr, size, num, fd));
-  else     return fseek(fd, (long)(size * num), SEEK_CUR) ? 0 : num;
+  else     return fseek(fd, static_cast<long>(size * num), SEEK_CUR) ? 0 : num;
 }
 
 static FaceIOErr NVFReadShapeModel(FaceIOAdapter *fac, uint32_t size, FILE *fd) {
@@ -1366,8 +1367,8 @@ static FaceIOErr NVFReadShapeModel(FaceIOAdapter *fac, uint32_t size, FILE *fd) 
         BAIL_IF_FALSE(1 == SafeRead(fac->getTriangleList(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1402,11 +1403,12 @@ static FaceIOErr NVFReadColorModel(FaceIOAdapter *fac, uint32_t size, FILE *fd) 
         BAIL_IF_FALSE(1 == SafeRead(fac->getColorEigenvalues(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       case FOURCC_TRIANGLE_LIST:
-        if (ts.size <= LONG_MAX) (void)fseek(fd, (long)ts.size, SEEK_CUR);  // Skip color triangle list -- it doesn't make sense
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // Skip color triangle list -- it doesn't make sense
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1436,8 +1438,8 @@ static FaceIOErr NVFReadMorphableModel(FaceIOAdapter *fac, uint32_t size, FILE *
         BAIL_IF_FALSE(1 == SafeRead(fac->getTextureCoordinates(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1483,8 +1485,8 @@ static FaceIOErr NVFReadBlendShapes(FaceIOAdapter *fac, uint32_t size, FILE *fd)
         BAIL_IF_FALSE(1 == SafeRead(shape, ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1516,8 +1518,8 @@ static FaceIOErr NVFReadIbugMappings(FaceIOAdapter *fac, uint32_t size, FILE *fd
         BAIL_IF_FALSE(1 == SafeRead(fac->getIbugLeftContour(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1546,8 +1548,8 @@ static FaceIOErr NVFReadModelContours(FaceIOAdapter *fac, uint32_t size, FILE *f
         BAIL_IF_FALSE(1 == SafeRead(fac->getModelLeftContour(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1575,8 +1577,8 @@ static FaceIOErr NVFReadTopology(FaceIOAdapter *fac, uint32_t size, FILE *fd) {
         BAIL_IF_FALSE(1 == SafeRead(fac->getAdjacentVertices(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1608,8 +1610,8 @@ static FaceIOErr NVFReadNvlm(FaceIOAdapter *fac, uint32_t size, FILE *fd) {
         BAIL_IF_FALSE(1 == SafeRead(fac->getNvlmLeftContour(n), ts.size, 1, fd), err, kIOErrRead);
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1642,8 +1644,8 @@ static FaceIOErr NVFReadPart(uint32_t i, FaceIOAdapter *fac, uint32_t size, FILE
         fac->setPartitionMaterialName(i, name.c_str());
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1672,8 +1674,8 @@ static FaceIOErr NVFReadPartitions(FaceIOAdapter *fac, uint32_t size, FILE *fd) 
         BAIL_IF_ERR(err = NVFReadPart(partIx, fac, ts.size, fd));
         break;
       default:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrEOF);  // Check for overflow before cast
-        BAIL_IF_NONZERO(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrEOF);  // Check for overflow before cast
+        BAIL_IF_NONZERO(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrEOF);  // We skip over objects we don't understand
         break;
     }
   }
@@ -1753,8 +1755,8 @@ FaceIOErr ReadNVFFaceModel(const char *fileName, FaceIOAdapter *fac) {
         BAIL_IF_ERR(err = NVFReadPartitions(fac, ts.size, fd));
         break;
       case FOURCC_EOTOC:
-        BAIL_IF_FALSE(ts.size <= LONG_MAX, err, kIOErrRead);  // Check for overflow before cast
-        BAIL_IF_NEGATIVE(fseek(fd, (long)ts.size, SEEK_CUR), err, kIOErrRead);  // Skip the EOTOC
+        BAIL_IF_FALSE(ts.size <= std::numeric_limits<long>::max(), err, kIOErrRead);  // Check for overflow before cast
+        BAIL_IF_NEGATIVE(fseek(fd, static_cast<long>(ts.size), SEEK_CUR), err, kIOErrRead);  // Skip the EOTOC
         break;
       default:
         BAIL(err, kIOErrSyntax);  // TODO: We should just skip over objects we don't understand
@@ -1857,7 +1859,7 @@ static FaceIOErr EOSReadColorModel(FaceIOAdapter *fac, FILE *fd) {
   if (DEBUG_PARSER) printf("Skipping triangle_list(%lld) @ %ld (%#lx)\n", z, ftell(fd), ftell(fd));
   BAIL_IF_FALSE(1 == fread(&z, sizeof(z), 1, fd), err, kIOErrRead);
   z *= 3 * sizeof(uint32_t);
-  (void)fseek(fd, (long)z, SEEK_CUR);
+  (void)fseek(fd, static_cast<long>(z), SEEK_CUR);
 
 bail:
   if (err) printf("Error reading Color Model\n");
@@ -1881,7 +1883,7 @@ static FaceIOErr EOSReadMorphableModel(FaceIOAdapter *fac, FILE *fd) {
   BAIL_IF_ERR(err = EOSReadColorModel(fac, fd));
   BAIL_IF_FALSE(1 == fread(&z, sizeof(z), 1, fd), err, kIOErrRead);
   BAIL_IF_FALSE(z >= 0, err, kIOErrRead);  // Check for negative values
-  BAIL_IF_FALSE(z <= LLONG_MAX / 2, err, kIOErrRead);  // Check for overflow before multiplication
+  BAIL_IF_FALSE(z <= std::numeric_limits<long long>::max() / 2, err, kIOErrRead);  // Check for overflow before multiplication
   z *= 2;                                            /* 2 floats per texture coordinate */
   BAIL_IF_FALSE(z <= UINT32_MAX / 2, err, kIOErrRead);  // Check for safe casting
   tex = fac->getTextureCoordinates((uint32_t)z * 2); /* allocate enough space for double precision */
