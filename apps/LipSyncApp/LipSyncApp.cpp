@@ -67,8 +67,7 @@ static const char* kExtendAudioSilence = "silence";
 // clang-format off
 bool          FLAG_debug = false,
               FLAG_verbose = false,
-              FLAG_offlineMode = true,                 // reads audio and video from files if set to true; webcam mode if set to false; currently only offline mode supported
-              FLAG_captureOutputs = true,              // write generated video to file if set to true. only in offline mode
+              FLAG_captureOutputs = true,              // write generated video to file if set to true
               FLAG_enableLookAway = false,
               FLAG_roiSkipFaceDetect = false;
 unsigned      FLAG_headMovementSpeed = 0;              // set to default value for Head Movement Speed (SLOW)
@@ -131,9 +130,7 @@ static void Usage() {
       " --log_level=<N>                       the desired log level: {0, 1, 2, 3} = {FATAL, ERROR, WARNING, INFO}, "
       "respectively (default 1)\n"
       " --model_path=<path>                   specify the directory containing the TRT models\n"
-      " --capture_outputs[=(true|false)]      write generated video to file if set to true. only in offline mode\n"
-      " --offline_mode[=(true|false)]         reads video from file if set to true; webcam mode if set to false. "
-      "Default true. Webcam mode is not currently supported\n"
+      " --capture_outputs[=(true|false)]      write generated video to file if set to true\n"
       " --codec=<fourcc>                      FOURCC code for the desired codec (default H264)\n"
       " --in_video=<file>                     specify the input video file\n"
       " --in_audio=<file>                     specify the input audio file.\n"
@@ -145,8 +142,7 @@ static void Usage() {
       " --bypass_factor=<[0.0,..1.0]>         specify the bypass factor, value in between 0.0 and 1.0 for partial "
       "bypass."
       "0.0 = effect fully enabled, 1.0 = effect fully bypassed (default 0.0)\n "
-      " --out=<file>                          specify the output file. only in offline mode and capture_outputs is "
-      "true.\n"
+      " --out=<file>                          specify the output file, if capture_outputs is set to true\n"
       " --extend_short_video=<str>            desired behavior when the input video is shorter than the input audio "
       "(default off):\n"
       "                                         off - truncate the output when the input video ends\n"
@@ -281,7 +277,6 @@ static int ParseMyArgs(int argc, char** argv) {
                 GetFlagArgVal("roi_rect", arg, &FLAG_roiRect) ||                //
                 GetFlagArgVal("out_file", arg, &FLAG_outFile) ||                //
                 GetFlagArgVal("capture_outputs", arg, &FLAG_captureOutputs) ||  //
-                GetFlagArgVal("offline_mode", arg, &FLAG_offlineMode) ||        //
                 GetFlagArgVal("model_path", arg, &FLAG_modelPath))) {
       continue;
     } else if (GetFlagArgVal("help", arg, &help)) {
@@ -376,7 +371,7 @@ class App {
   unsigned m_frameCount;
 
   // Output values for debugging.
-  float m_lipSyncActivation = 0.0f;
+  NvAR_LipSyncActivation m_lipSyncActivation = {};
 
   std::string m_outParentPath, m_outFilename;  // Decomposition of FLAG_outFile.
 };
@@ -508,6 +503,8 @@ App::Err App::Run(void) {
   App::Err app_err = errNone;
   NvCV_Status err = NVCV_SUCCESS;
   NvCVImage c_src, g_src, tmp;
+  NvAR_LipSyncRegion lip_sync_region = {};
+  NvAR_LipSyncRegionData lip_sync_region_data = {};
 
   NvAR_Rect roi = {0.0f, 0.0f, 0.0f, 0.0f};
   if (!FLAG_roiRect.empty()) {
@@ -521,9 +518,17 @@ App::Err App::Run(void) {
     }
   }
   if (!(FLAG_bypassFactor >= 0.0f && FLAG_bypassFactor <= 1.0f)) {
-    std::cerr << "Error: Invalid bypass factor (expected value in between 0.0 to 1.0), but recieved: "
-              << FLAG_bypassFactor << std::endl;
-    return errParameter;
+    try {
+      std::cerr << "Error: Invalid bypass factor (expected value in between 0.0 to 1.0), but recieved: "
+                << FLAG_bypassFactor << std::endl;
+      return errParameter;
+    } catch (const std::exception& e) {
+      std::cerr << "ERROR: Exception in Run(): " << e.what() << std::endl;
+      return errGeneral;
+    } catch (...) {
+      std::cerr << "ERROR: Unknown exception in Run()" << std::endl;
+      return errGeneral;
+    }
   }
 
   if (FLAG_debug) {
@@ -563,8 +568,9 @@ App::Err App::Run(void) {
   RETURN_APPERR_IF_NVERR(
       err = NvAR_SetObject(m_lipSyncHandle, NvAR_Parameter_Output(Image), &m_gDst, sizeof(NvCVImage)), errSDK);
 
-  RETURN_APPERR_IF_NVERR(
-      err = NvAR_SetF32Array(m_lipSyncHandle, NvAR_Parameter_Output(Activation), &m_lipSyncActivation, 1), errSDK);
+  RETURN_APPERR_IF_NVERR(err = NvAR_SetObject(m_lipSyncHandle, NvAR_Parameter_Output(Activation), &m_lipSyncActivation,
+                                              sizeof(NvAR_LipSyncActivation)),
+                         errSDK);
 
   // Flag that will be set when we run the feature, to indicate whether an output image is ready.
   unsigned int output_ready = 0;
@@ -676,29 +682,24 @@ App::Err App::Run(void) {
     const bool should_stop = (video_finished && audio_finished) || !got_video_frame || !got_audio_frame;
     // Only update `end_frame_index` once, the first time `should_stop` is true.
     if (end_frame_index == std::numeric_limits<unsigned>::max() && should_stop) {
-      if (video_finished && !audio_finished) {
-        std::cerr << "Warning: video finished before audio. Audio may be truncated" << std::endl;
-      }
       // We will process `init_latency_frame_cnt` more frames to flush the pipeline.
       end_frame_index = input_frame_index + init_latency_frame_cnt;
     }
 
     if (FLAG_bypassFactor != 0 || (roi.width > 0 && roi.height > 0)) {
-      NvAR_SpeakerData speaker_data{};
-      speaker_data.audio_frame_data = audio_frame.data();
-      speaker_data.audio_frame_size = audio_frame.size();
-      speaker_data.bypass = FLAG_bypassFactor;
-      speaker_data.region_type = static_cast<int>(FLAG_roiSkipFaceDetect);
-      speaker_data.region = roi;
-      RETURN_APPERR_IF_NVERR(
-          err = NvAR_SetObject(m_lipSyncHandle, NvAR_Parameter_Input(SpeakerData), &speaker_data, sizeof(speaker_data)),
-          errSDK);
-    } else {
-      // Set Audio Frame
-      RETURN_APPERR_IF_NVERR(err = NvAR_SetF32Array(m_lipSyncHandle, NvAR_Parameter_Input(AudioFrameBuffer),
-                                                    audio_frame.data(), audio_frame.size()),
+      lip_sync_region.bypass = FLAG_bypassFactor;
+      lip_sync_region.region_type = static_cast<int>(FLAG_roiSkipFaceDetect);
+      lip_sync_region.bbox = roi;
+      lip_sync_region.is_speaking = 1;
+      lip_sync_region_data = {&lip_sync_region, 1};
+      RETURN_APPERR_IF_NVERR(err = NvAR_SetObject(m_lipSyncHandle, NvAR_Parameter_Input(LipSyncRegionData),
+                                                  &lip_sync_region_data, sizeof(lip_sync_region_data)),
                              errSDK);
     }
+    // Set Audio Frame
+    RETURN_APPERR_IF_NVERR(err = NvAR_SetF32Array(m_lipSyncHandle, NvAR_Parameter_Input(AudioFrameBuffer),
+                                                  audio_frame.data(), audio_frame.size()),
+                           errSDK);
 
     RETURN_APPERR_IF_NVERR(
         err = NvAR_SetU32(m_lipSyncHandle, NvAR_Parameter_Input(HeadMovementSpeed), FLAG_headMovementSpeed), errSDK);
@@ -711,12 +712,7 @@ App::Err App::Run(void) {
     }
 
     // Run the feature.
-    err = NvAR_Run(m_lipSyncHandle);
-    if (err == NVCV_ERR_OBJECTNOTFOUND) {
-      std::cerr << "Warning: face not found in input image" << std::endl;
-    } else {
-      RETURN_APPERR_IF_NVERR(err, errSDK);
-    }
+    RETURN_APPERR_IF_NVERR(err = NvAR_Run(m_lipSyncHandle), errSDK);
 
     // If we are after the initial input frames, there should be an output frame available.
     if (output_ready) {
@@ -738,22 +734,37 @@ App::Err App::ProcessOutputVideo() {
   if (FLAG_debug) {
     const int font_face = cv::FONT_HERSHEY_DUPLEX;
     const int pixel_height = m_srcHeight / 50;
-    const int thickness = 1;
+    const int thickness = 2;
     const double font_scale = cv::getFontScaleFromHeight(font_face, pixel_height);
-    const int pad = m_srcHeight / 200;
 
-    // Set background color and text based on the active score.
-    const cv::Scalar bg_color = cv::Scalar(0.0f, 255.0f * m_lipSyncActivation, 255.0f * (1.0f - m_lipSyncActivation));
-    const std::string text = cv::format("LipSync Active: %3.1f", m_lipSyncActivation);
+    // Set color based on the activation score (green for active, red for inactive).
+    const cv::Scalar circle_color =
+        cv::Scalar(0.0f, 255.0f * m_lipSyncActivation.strength, 255.0f * (1.0f - m_lipSyncActivation.strength));
+    const std::string text = cv::format("%3.0f%%", m_lipSyncActivation.strength * 100.0f);
 
-    // Compute size and location of the background rectangle and the text.
-    int baseline = 0;
-    const cv::Size text_size = cv::getTextSize(text, font_face, font_scale, thickness, &baseline);
-    const cv::Point text_origin((m_srcWidth - text_size.width) / 2, pixel_height + text_size.height);
-    const cv::Rect bg_rect(text_origin.x - pad, text_origin.y - text_size.height - pad,  //
-                           text_size.width + 2 * pad, text_size.height + baseline + thickness + 2 * pad);
-    cv::rectangle(o_dst, bg_rect, bg_color, -1);
-    cv::putText(o_dst, text, text_origin, font_face, font_scale, cv::Scalar(0));
+    // Draw circle at face location if valid
+    if (m_lipSyncActivation.size > 0.0f) {
+      const cv::Point center(static_cast<int>(m_lipSyncActivation.center_x),
+                             static_cast<int>(m_lipSyncActivation.center_y));
+      const int radius = static_cast<int>(m_lipSyncActivation.size * 0.75f);
+
+      // Draw the circle
+      cv::circle(o_dst, center, radius, circle_color, thickness);
+
+      // Draw activation text near the circle (below it)
+      int baseline = 0;
+      const cv::Size text_size = cv::getTextSize(text, font_face, font_scale, thickness, &baseline);
+      const cv::Point text_origin(center.x - text_size.width / 2, center.y + radius + text_size.height + 5);
+
+      // Draw text background for better visibility
+      const int pad = 3;
+      const cv::Rect text_bg_rect(text_origin.x - pad, text_origin.y - text_size.height - pad,
+                                  text_size.width + 2 * pad, text_size.height + baseline + 2 * pad);
+      cv::rectangle(o_dst, text_bg_rect, cv::Scalar(0, 0, 0), -1);
+
+      // Draw the text
+      cv::putText(o_dst, text, text_origin, font_face, font_scale, circle_color, thickness);
+    }
   }
 
   if (m_genVideo.isOpened()) {
@@ -824,12 +835,6 @@ int main(int argc, char** argv) {
   if (NVCV_SUCCESS != err)
     printf("%s: while configuring logger to \"%s\"\n", NvCV_GetErrorStringFromCode(err), FLAG_log.c_str());
 
-  // Webcam mode is currently not supported, check and error out if it is enabled.
-  if (FLAG_offlineMode == false) {
-    printf("ERROR: Webcam mode is not supported currently");
-    goto bail;
-  }
-
   if (FLAG_modelPath.empty()) {
     printf(
         "WARNING: Model path not specified. Please set --model_path=/path/to/trt/and/lipsync/models, "
@@ -843,20 +848,13 @@ int main(int argc, char** argv) {
     goto bail;
   }
 
-  if (FLAG_offlineMode) {
-    if (FLAG_inAudio.empty()) {
-      app_err = App::errMissing;
-      printf("ERROR: %s, please specify source audio file using --in_audio in offline mode\n",
-             app.ErrorStringFromCode(app_err));
-      goto bail;
-    }
-    app_err = app.InitOfflineMode();
-    BAIL_IF_ERR(app_err);
-  } else {
-    app_err = App::errMode;
-    printf("ERROR: %s, Live capture mode not supported currently \n", app.ErrorStringFromCode(app_err));
+  if (FLAG_inAudio.empty()) {
+    app_err = App::errMissing;
+    printf("ERROR: %s, please specify source audio file using --in_audio\n", app.ErrorStringFromCode(app_err));
     goto bail;
   }
+  app_err = app.InitOfflineMode();
+  BAIL_IF_ERR(app_err);
 
   app_err = app.CreateEffect();
   BAIL_IF_ERR(app_err);
@@ -868,7 +866,7 @@ int main(int argc, char** argv) {
 
   BAIL_IF_ERR(app_err);
 
-  if (FLAG_offlineMode && FLAG_captureOutputs && FLAG_verbose) {
+  if (FLAG_captureOutputs && FLAG_verbose) {
     printf("Output video saved at %s", FLAG_outFile.c_str());
   }
 

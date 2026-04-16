@@ -55,8 +55,6 @@ char* g_nvARSDKPath = NULL;
 namespace LipsyncConstants {
 constexpr unsigned kInputSampleRate = 16000;
 constexpr unsigned kAudioNumChannels = 1;
-constexpr double kFPS = 30.0;
-constexpr unsigned kNumAudioLookAheadFrames = 3;
 }  // namespace LipsyncConstants
 
 bool FLAG_verbose = false;
@@ -286,7 +284,7 @@ class BaseApp {
   virtual NvCV_Status AllocateBuffers(unsigned src_vid_width, unsigned src_vid_height, unsigned num_streams) {
     return NVCV_SUCCESS;
   }
-  virtual NvCV_Status SetParameters() { return NVCV_SUCCESS; }
+  virtual NvCV_Status SetParameters(double src_video_fps) { return NVCV_SUCCESS; }
   virtual NvCV_Status GetNumInitialFrames(unsigned int& num_initial_frames) { return NVCV_SUCCESS; }
   virtual NvCV_Status GenerateNthOutputVizImage(unsigned n, cv::Mat& result) = 0;
   virtual NvCV_Status Load() { return NvAR_Load(m_effect); }
@@ -344,7 +342,7 @@ class LipsyncApp : public BaseApp {
   }
 
   // Source image, Generated image
-  NvCV_Status SetParameters() {
+  NvCV_Status SetParameters(double src_video_fps) {
     NvCV_Status err = NVCV_SUCCESS;
     cv::Mat src_img_cv_buffer;
 
@@ -355,6 +353,8 @@ class LipsyncApp : public BaseApp {
     BAIL_IF_ERR(err = NvAR_SetObject(m_effect, NvAR_Parameter_Output(Image),
                                      NthImage(0, m_outVid.height / m_numOfStreams, &m_outVid, &m_nthDstImg),
                                      sizeof(NvCVImage)));  // Set the first of the batched images in ...
+
+    BAIL_IF_ERR(err = NvAR_SetF32(m_effect, NvAR_Parameter_Config(VideoFPS), src_video_fps));
   bail:
     return err;
   }
@@ -402,6 +402,7 @@ NvCV_Status BatchProcessVideos() {
   cv::Mat cv_img;
   NvCVImage nv_img;
   unsigned src_video_width = 0, src_video_height = 0;
+  double src_video_fps;
   unsigned int init_latency_frame_count = 0;
   std::vector<std::vector<float>*> list_of_audio(num_streams);
   std::vector<cv::Mat> frames(num_streams), frames_t_1(num_streams);
@@ -415,15 +416,13 @@ NvCV_Status BatchProcessVideos() {
   float* audio_input;
   unsigned batchsize = 0;
   unsigned frame_count = 0;
-  double fps;
   unsigned input_num_samples = 0;
   const unsigned int samples_per_second = LipsyncConstants::kInputSampleRate;  // 16000 Hz
   unsigned int last_audio_end_sample = 0;
-  float estimated_video_frame_duration = 1.0f / LipsyncConstants::kFPS;
   std::vector<double> frame_timestamp(num_streams);
   std::vector<bool> audio_finished(num_streams, false);
   std::vector<int> flush_frames_remaining;
-  float* activation = nullptr;
+  NvAR_LipSyncActivation* activation = nullptr;
   const void** activation_ptr = const_cast<const void**>(reinterpret_cast<void**>(&activation));
   BAIL_IF_FALSE(app != nullptr, err, NVCV_ERR_UNIMPLEMENTED);
   BAIL_IF_FALSE(num_streams > 0, err, NVCV_ERR_MISSINGINPUT);
@@ -441,6 +440,7 @@ NvCV_Status BatchProcessVideos() {
     // Retrieve resolution from metadata with implicit conversion
     unsigned width = list_of_captures[i].get(cv::CAP_PROP_FRAME_WIDTH);
     unsigned height = list_of_captures[i].get(cv::CAP_PROP_FRAME_HEIGHT);
+    double fps = list_of_captures[i].get(cv::CAP_PROP_FPS);
 
     if (width == 0 || height == 0) {
       printf("Error: Could not retrieve resolution for %s.\n", FLAG_srcVideoFiles[i].c_str());
@@ -450,10 +450,13 @@ NvCV_Status BatchProcessVideos() {
     if (i == 0) {
       src_video_width = width;
       src_video_height = height;
-    }
-    // For subsequent videos, compare against the first video's resolution
-    else if (src_video_width != width || src_video_height != height) {
+      src_video_fps = fps;
+    } else if (src_video_width != width || src_video_height != height) {
+      // For subsequent videos, compare against the first video's resolution
       printf("Error: Resolution of the videos must be the same.\n");
+      return NVCV_ERR_MISMATCH;
+    } else if (src_video_fps != fps) {
+      printf("Error: FPS of the videos must be the same.\n");
       return NVCV_ERR_MISMATCH;
     }
 
@@ -471,7 +474,7 @@ NvCV_Status BatchProcessVideos() {
 
   BAIL_IF_ERR(err = app->Init(num_streams));                                                // Init effect
   BAIL_IF_ERR(err = app->AllocateBuffers(src_video_width, src_video_height, num_streams));  // Allocate buffers
-  BAIL_IF_ERR(err = app->SetParameters());                                                  // Set IO and config
+  BAIL_IF_ERR(err = app->SetParameters(src_video_fps));                                     // Set IO and config
   BAIL_IF_ERR(err = app->Load());                                                           // Load the feature
   BAIL_IF_ERR(err = app->GetNumInitialFrames(init_latency_frame_count));
   flush_frames_remaining.resize(num_streams, init_latency_frame_count);
@@ -491,7 +494,7 @@ NvCV_Status BatchProcessVideos() {
     std::string dst_video = std::string(FLAG_srcVideoFiles[i]).substr(0, period_loc);
     dst_video = dst_video + "_" + FLAG_outputNameTag + "." + FLAG_outputFormat;
 
-    list_of_writers[i].open(dst_video, StringToFourcc(FLAG_outputCodec), LipsyncConstants::kFPS,
+    list_of_writers[i].open(dst_video, StringToFourcc(FLAG_outputCodec), src_video_fps,
                             cv::Size(src_video_width, src_video_height));
     if (!list_of_writers[i].isOpened()) {
       printf("Error: Could not open video writer for video %s.\n", dst_video.c_str());
@@ -504,7 +507,7 @@ NvCV_Status BatchProcessVideos() {
     batchsize = 0;  // batchsize = number of active videos
 
     for (unsigned i = 0; i < num_streams; i++) {
-      frame_timestamp[i] += 1.0f / static_cast<double>(LipsyncConstants::kFPS);
+      frame_timestamp[i] += 1.0f / src_video_fps;
       if (list_of_captures[i].isOpened()) {
         list_of_captures[i] >> frames_t_1[i];  // Reading the next frame to know if the video has ended
                                                // as it is not possible to know if current frame is last
@@ -597,8 +600,8 @@ NvCV_Status BatchProcessVideos() {
       // Update current frame
       frames[video_idx] = frames_t_1[video_idx].clone();  // copying the t+1 frame to current frame
       if (FLAG_verbose && activation) {
-        std::cout << "Activation value for video " << video_idx << " for frame " << frame_count << " is "
-                  << activation[i] << std::endl;
+        std::cout << "Activation strength for video " << video_idx << " for frame " << frame_count << " is "
+                  << activation[i].strength << std::endl;
       }
     }
     if (FLAG_verbose) {

@@ -49,9 +49,14 @@ for i in "${!video_array[@]}"; do
         fi
         rm -f $app_output_video
 
-        echo "Fixing color metadata for $output_video using $input_video as reference"
         ./fix_metadata.sh "$input_video" "$output_video" "$temp_corrected_video"
         mv "$temp_corrected_video" "$output_video"
+        if [ -f "$output_video" ]; then
+            echo Output video: "$output_video" was created successfully.
+        else
+            echo Output video: "$output_video" was not created.
+            echo Please ensure ffmpeg is set up correctly as instructed in the README file.
+        fi
     else
         echo "Warning: Output video $app_output_video not found, skipping muxing"
     fi

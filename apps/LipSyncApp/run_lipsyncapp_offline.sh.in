@@ -52,11 +52,12 @@ fi
 mv "$TEMP_CORRECTED_VIDEO" "$OUTPUT_VIDEO"
 
 if [ -f "$OUTPUT_VIDEO" ]; then
-  echo The final output file: "$OUTPUT_VIDEO" exists.
-  echo Delete temporary files: "$TEMP_VIDEO" and  "$TEMP_AUDIO"
+  echo Output video: "$OUTPUT_VIDEO" was created successfully.
+  echo Temporary files: "$TEMP_VIDEO" and "$TEMP_AUDIO" will be deleted.
   rm $TEMP_VIDEO
   rm $TEMP_AUDIO
 else
-  echo The final output: "$OUTPUT_VIDEO" does not exist. Keep the temporary file: "$TEMP_VIDEO"
-  echo Please setup ffmpeg as instructed in the README file.
+  echo Output video: "$OUTPUT_VIDEO" was not created.
+  echo Temporary files: "$TEMP_VIDEO" and "$TEMP_AUDIO" will not be deleted.
+  echo Please ensure ffmpeg is set up correctly as instructed in the README file.
 fi

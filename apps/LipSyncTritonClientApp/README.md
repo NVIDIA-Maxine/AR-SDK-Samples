@@ -1,36 +1,43 @@
 LipSyncTritonClientApp
 ======================
 
-The LipSyncTritonClientApp is a sample app, only for the Triton enabled AR SDK, which can be used to run AR SDK features on the server. 
+The LipSyncTritonClientApp is a sample app, only for the Triton enabled AR SDK, which can be used to run AR SDK Lip Sync feature on a Triton server.
 
 It can concurrently process multiple input files.
 
-Its usage is: 
-```
-LipSyncTritonClientApp [flags ...] --src_videos=inVideoFile1[, ...] --src_audios=inAudioFile1[, ...]
- ```
-
-The inAudioFile1, ... , inAudioFileN are of the input audio files with format of 32 bit floating PCM, mono channel and 16K sample rate. The input files are not included with the sample app in the SDK.
-Lip sync also requires source videos using `--src_videos` argument. All source videos should be the same resolution and should have 30fps, and the number of source video files should be equal to the number of input audio files.
-Each source video will be lip synced by the corresponding input audio file, producing video outputs. Be noted that the input audio is not muxed into the generated video. Please refer to the ffmpeg command in the run_lipsynctritonclientapp_offline.sh script for AV mux.
-
 Required Features
 -----------------
-This app requires the following features to be installed. Make sure to install them using *install_features.ps1* (Windows) or *install_features.sh* (Linux) in your AR SDK features directory before building it.
+This app requires the following features to be installed. Make sure to install them using *install_feature.ps1* (Windows) or *install_feature.sh* (Linux) in your AR SDK features directory before building it.
 - nvARLipSync
 
-Run the Triton Client Application
----------------------------------
+Additional Dependencies
+-----------------------
+
+In order for the sample app and scripts to work correctly, FFmpeg must be installed.
+
+```bash
+apt install ffmpeg
+```
+
+Usage
+-----
 
 First make sure you have the Triton server application running. See the base README.md for information on this.
 
-The following sets up the AR SDK library path and then runs speech live portrait to produce an output video file.
+The following sets up the AR SDK library path and then runs the app to produce output video files.
 
+```bash
+# Single video and audio file
+./run_lipsynctritonclientapp_offline.sh --src_videos=vid1.mp4 --src_audios=audio1.wav
+# Multiple videos and audio files
+./run_lipsynctritonclientapp_offline.sh --src_videos=vid1.mp4,vid2.mp4,vid3.mp4 --src_audios=audio1.wav,audio2.wav,audio3.wav
 ```
-source setup_env.sh
 
-./LipsyncTritonClientApp --src_videos=vid1.mp4,vid2.mp4,vid3.mp4 --src_audios=audio1.wav,audio2.wav,audio3.wav
-```
+All source videos should be the same resolution and the same frame-rate.
+The source audio files should be 32 bit floating-point PCM, mono channel with 16 kHz sample rate.
+The number of source video files should be equal to the number of source audio files.
+Each source video will be lip synced using the corresponding source audio file, producing video outputs. 
+The script `run_lipsynctritonclientapp_offline.sh` will mux the source audio into the generated video after processing is complete.
 
 Command-Line Arguments for the Lip Sync Triton Client Application
 --------------------------------------------------------------------

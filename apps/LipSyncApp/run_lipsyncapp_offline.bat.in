@@ -1,6 +1,6 @@
 @ECHO OFF
 SETLOCAL EnableDelayedExpansion
-SET PATH=@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;%PATH%;
+SET "PATH=@OPENCV_PATH_STR@;@NVAR_DYNAMIC_LIBRARY_DIRS@;%PATH%"
 
 @REM Set the default inputs that will be used to generate the output.
 SET INPUT_VIDEO=lipsyncSampleVideo.mp4
@@ -35,7 +35,7 @@ IF %ERRORLEVEL% NEQ 0 (
 @REM Running the lipsync feature and generating the lipsync output.
 @REM Note that the output is video-only, ffmpeg is needed to combine with original audio.
 ECHO Generating the temporary result: "%TEMP_VIDEO%"
-LipSyncApp.exe --model_path=@NVAR_MODEL_DIR@ --in_video="%INPUT_VIDEO%" --in_audio="%TEMP_AUDIO%" --out="%TEMP_VIDEO%" --codec=ULRG
+LipSyncApp.exe --model_path="@NVAR_MODEL_DIR@" --in_video="%INPUT_VIDEO%" --in_audio="%TEMP_AUDIO%" --out="%TEMP_VIDEO%" --codec=ULRG
 IF %ERRORLEVEL% NEQ 0 (
   ECHO LipSyncApp failed
   EXIT /b 1
@@ -57,11 +57,12 @@ IF %ERRORLEVEL% NEQ 0 (
 MOVE "%TEMP_CORRECTED_VIDEO%" "%OUTPUT_VIDEO%"
 
 IF EXIST "%OUTPUT_VIDEO%" (
-  ECHO The final output file: "%OUTPUT_VIDEO%" exists.
-  ECHO Delete temporary files: "%TEMP_VIDEO%" and  "%TEMP_AUDIO%"
+  ECHO Output video: "%OUTPUT_VIDEO%" was created successfully.
+  ECHO Temporary files: "%TEMP_VIDEO%" and "%TEMP_AUDIO%" will be deleted.
   DEL "%TEMP_VIDEO%"
   DEL "%TEMP_AUDIO%"
 ) ELSE (
-  ECHO The final output: "%OUTPUT_VIDEO%" does not exist. Keep the temporary file: %TEMP_VIDEO%
-  ECHO Please setup ffmpeg as instructed in the README file.
+  ECHO Output video: "%OUTPUT_VIDEO%" was not created. 
+  ECHO Temporary files: "%TEMP_VIDEO%" and "%TEMP_AUDIO" will not be deleted.
+  ECHO Please ensure ffmpeg is set up correctly as instructed in the README file.
 )
