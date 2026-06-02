@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -70,7 +71,8 @@ bool          FLAG_debug = false,
               FLAG_captureOutputs = true,              // write generated video to file if set to true
               FLAG_enableLookAway = false,
               FLAG_roiSkipFaceDetect = false;
-unsigned      FLAG_headMovementSpeed = 0;              // set to default value for Head Movement Speed (SLOW)
+unsigned      FLAG_headMovementSpeed = 0,              // set to default value for Head Movement Speed (SLOW)
+              FLAG_language = 0;
 unsigned      FLAG_logLevel = NVCV_LOG_ERROR;
 double        FLAG_bypassFactor = 0.0f;
 std::string   FLAG_inVid,
@@ -154,8 +156,10 @@ static void Usage() {
       "(default off):\n"
       "                                         off - truncate the output when the input audio ends\n"
       "                                         silence - extend the audio by adding silence\n"
-      " --head_movement_speed=<N>               specify the expected speed of head motion in the input video: 0=SLOW, "
-      "1=FAST. Default: 0 (SLOW).\n");
+      " --head_movement_speed=<N>             specify the expected speed of head motion in the input video: 0=SLOW, "
+      "1=FAST. Default: 0 (SLOW).\n"
+      " --language=<N>                        specify whether to use a language-specific model for processing, or the "
+      "generic multi-language model: 0=Generic, 1=German, 2=French, 3=Spanish (default: 0 (Generic))\n");
 }
 
 static bool GetFlagArgVal(const char* flag, const char* arg, const char** val) {
@@ -177,7 +181,13 @@ static bool GetFlagArgVal(const char* flag, const char* arg, const char** val) {
   if ((strlen(flag) != n) || (strncmp(flag, arg, n) != 0)) {
     return false;
   }
-  *val = s + 1;
+  const char* v = s + 1;
+  while (std::isspace(static_cast<unsigned char>(*v))) ++v;  // Ignore leading whitespace
+  if (*v == '\0') {
+    printf("ERROR: Value is missing for flag: \"%s\"\n", flag);
+    return false;
+  }
+  *val = v;
   return true;
 }
 
@@ -201,19 +211,27 @@ static bool GetFlagArgVal(const char* flag, const char* arg, bool* val) {
 bool GetFlagArgVal(const char* flag, const char* arg, long* val) {
   const char* valStr;
   bool success = GetFlagArgVal(flag, arg, &valStr);
-  if (success) {
-    *val = strtol(valStr, NULL, 0);  // accommodate 123 decimal, 0x123 hex and 0123 octal
+  if (!success) return false;
+  char* end = nullptr;
+  long v = strtol(valStr, &end, 0);  // accommodate 123 decimal, 0x123 hex and 0123 octal
+  if (end == valStr || *end != '\0') {
+    printf("ERROR: Invalid integer value for flag: \"%s\"\n", flag);
+    return false;
   }
-  return success;
+  *val = v;
+  return true;
 }
 
 static bool GetFlagArgVal(const char* flag, const char* arg, unsigned* val) {
   long long_val;
   bool success = GetFlagArgVal(flag, arg, &long_val);
-  if (success) {
-    *val = (unsigned)long_val;
+  if (!success) return false;
+  if (long_val < 0) {
+    printf("ERROR: Value for flag: \"%s\" cannot be negative\n", flag);
+    return false;
   }
-  return success;
+  *val = (unsigned)long_val;
+  return true;
 }
 
 static bool GetFlagArgVal(const char* flag, const char* arg, int* val) {
@@ -260,23 +278,24 @@ static int ParseMyArgs(int argc, char** argv) {
     const char* arg = *argv;
     if (arg[0] != '-') {
       continue;
-    } else if ((arg[1] == '-') &&                                               //
-               (GetFlagArgVal("verbose", arg, &FLAG_verbose) ||                 //
-                GetFlagArgVal("debug", arg, &FLAG_debug) ||                     //
-                GetFlagArgVal("log", arg, &FLAG_log) ||                         //
-                GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||              //
-                GetFlagArgVal("in_video", arg, &FLAG_inVid) ||                  //
-                GetFlagArgVal("in_audio", arg, &FLAG_inAudio) ||                //
-                GetFlagArgVal("out", arg, &FLAG_outFile) ||                     //
-                GetFlagArgVal("extend_short_video", arg, &FLAG_extendVideo) ||  //
-                GetFlagArgVal("extend_short_audio", arg, &FLAG_extendAudio) ||  //
-                GetFlagArgVal("head_movement_speed", arg, &FLAG_headMovementSpeed) ||
-                GetFlagArgVal("codec", arg, &FLAG_captureCodec) ||              //
-                GetFlagArgVal("bypass_factor", arg, &FLAG_bypassFactor) ||      //
-                GetFlagArgVal("roi_skip_fd", arg, &FLAG_roiSkipFaceDetect) ||   //
-                GetFlagArgVal("roi_rect", arg, &FLAG_roiRect) ||                //
-                GetFlagArgVal("out_file", arg, &FLAG_outFile) ||                //
-                GetFlagArgVal("capture_outputs", arg, &FLAG_captureOutputs) ||  //
+    } else if ((arg[1] == '-') &&                                                      //
+               (GetFlagArgVal("verbose", arg, &FLAG_verbose) ||                        //
+                GetFlagArgVal("debug", arg, &FLAG_debug) ||                            //
+                GetFlagArgVal("log", arg, &FLAG_log) ||                                //
+                GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||                     //
+                GetFlagArgVal("in_video", arg, &FLAG_inVid) ||                         //
+                GetFlagArgVal("in_audio", arg, &FLAG_inAudio) ||                       //
+                GetFlagArgVal("out", arg, &FLAG_outFile) ||                            //
+                GetFlagArgVal("extend_short_video", arg, &FLAG_extendVideo) ||         //
+                GetFlagArgVal("extend_short_audio", arg, &FLAG_extendAudio) ||         //
+                GetFlagArgVal("head_movement_speed", arg, &FLAG_headMovementSpeed) ||  //
+                GetFlagArgVal("language", arg, &FLAG_language) ||                      //
+                GetFlagArgVal("codec", arg, &FLAG_captureCodec) ||                     //
+                GetFlagArgVal("bypass_factor", arg, &FLAG_bypassFactor) ||             //
+                GetFlagArgVal("roi_skip_fd", arg, &FLAG_roiSkipFaceDetect) ||          //
+                GetFlagArgVal("roi_rect", arg, &FLAG_roiRect) ||                       //
+                GetFlagArgVal("out_file", arg, &FLAG_outFile) ||                       //
+                GetFlagArgVal("capture_outputs", arg, &FLAG_captureOutputs) ||         //
                 GetFlagArgVal("model_path", arg, &FLAG_modelPath))) {
       continue;
     } else if (GetFlagArgVal("help", arg, &help)) {
@@ -414,6 +433,12 @@ App::Err App::CreateEffect() {
   }
 
   err = NvAR_SetString(m_lipSyncHandle, NvAR_Parameter_Config(ModelDir), FLAG_modelPath.c_str());
+  if (err) {
+    std::cout << NvCV_GetErrorStringFromCode(err) << std::endl;
+    return Err::errSDK;
+  }
+
+  err = NvAR_SetU32(m_lipSyncHandle, NvAR_Parameter_Config(Language), FLAG_language);
   if (err) {
     std::cout << NvCV_GetErrorStringFromCode(err) << std::endl;
     return Err::errSDK;
@@ -740,7 +765,7 @@ App::Err App::ProcessOutputVideo() {
     // Set color based on the activation score (green for active, red for inactive).
     const cv::Scalar circle_color =
         cv::Scalar(0.0f, 255.0f * m_lipSyncActivation.strength, 255.0f * (1.0f - m_lipSyncActivation.strength));
-    const std::string text = cv::format("%3.0f%%", m_lipSyncActivation.strength * 100.0f);
+    const std::string text = cv::format("%d%%", static_cast<int>(std::ceil(m_lipSyncActivation.strength * 100.0f)));
 
     // Draw circle at face location if valid
     if (m_lipSyncActivation.size > 0.0f) {

@@ -55,3 +55,4 @@ Command-Line Arguments for the Lip Sync Triton Client Application
 | `--output_codec=<fourcc>`    | FourCC code for the desired codec (default `"avc1"` -- H264) |
 | `--output_format=<format>`   | Format of the output video (default `"mp4"`) |
 | `--head_movement_speed=<N>`  | Specifies the expected speed of head motion in the input video. The default value is 0.<br><br>- `0`: slow<br>- `1`: fast
+| `--language=<N>`             | Specify whether to use a language-specific model for processing, or the generic multi-language model: 0=Generic, 1=German, 2=French, 3=Spanish (default: 0) |

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -29,6 +29,7 @@
 #include <string>
 
 #include "batchUtilities.h"
+#include "diarizationReader.h"
 #include "nvAR.h"
 #include "nvARActiveSpeakerDetection.h"
 #include "nvCVOpenCV.h"
@@ -39,9 +40,9 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // clang-format off
- #define BAIL_IF_ERR(err) do { if (0 != (err)) { goto bail; } } while (0)
- #define BAIL_IF_FALSE(x, err, code) do { if (!(x)) { err = code; goto bail; } } while (0)
- #define BAIL(err, code) do { err = code; goto bail; } while (0)
+#define BAIL_IF_ERR(err) do { if (0 != (err)) { goto bail; } } while (0)
+#define BAIL_IF_FALSE(x, err, code) do { if (!(x)) { err = code; goto bail; } } while (0)
+#define BAIL(err, code) do { err = code; goto bail; } while (0)
 // clang-format on
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -57,10 +58,13 @@ std::string FLAG_outputNameTag = "output";
 std::string FLAG_outputCodec = "mp4v";
 std::string FLAG_outputFormat = "mp4";
 std::string FLAG_log = "stderr";
+bool FLAG_multiview = false;
 std::vector<std::string> FLAG_srcVideoFiles;
 std::vector<std::vector<std::string>> FLAG_srcAudioFilesPerVideo;
 uint32_t FLAG_logLevel = NVCV_LOG_ERROR;
-float FLAG_syncTolerance = -1.0f;  // [0, 1] to set; -1 = unset (use feature default)
+float FLAG_syncTolerance = -1.0f;                // [0, 1] to set; -1 = unset (use feature default)
+uint32_t FLAG_maxSyncFaces = 0;                  // max faces for sync discrimination (0 = no limit)
+std::vector<std::string> FLAG_diarizationFiles;  // One per video stream
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Static function declarations                                                                                       //
@@ -150,6 +154,7 @@ class App {
   // Batched input/output parameters (indexed by video stream index)
   std::vector<uint32_t> m_newShotBatched;  // Input: shot change mode per video stream
   std::vector<uint32_t> m_flushBatched;    // Input: flush mode per video stream
+  std::vector<uint32_t> m_flagsBatched;    // Input: flags per video stream
   std::vector<uint32_t> m_readyBatched;    // Output: ready status per video stream
 
   // Batch-position-indexed arrays for remapping (indexed by batch position)
@@ -166,6 +171,10 @@ class App {
   // Frame caching for output synchronization (per video stream)
   std::vector<std::deque<cv::Mat>> m_frameCachePerVideo;
   std::vector<std::deque<NvAR_ActiveSpeakerTrackingData>> m_outputCachePerVideo;
+
+  // Diarization data for active audio ID determination (one per video stream)
+  std::vector<DiarizationReader> m_diarizationReaders;
+  std::vector<bool> m_hasDiarization;
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -290,10 +299,15 @@ static void Usage() {
       "(default: 1)\n"
       "  --src_videos=<v0,v1,...>           Comma separated list of identically sized source video files\n"
       "  --src_audios=<v0_a0+v0_a1,v1_a0,...>  Audio files per video. Comma separates videos, '+' separates\n"
-      "                                        audio tracks within each video.\n"
+      "                                        tracks. With --diarization for a video, exactly one mix-down WAV is\n"
+      "                                        expected; logical channels are derived from diarization speaker IDs.\n"
       "                                        Example: \"audio0_0.wav+audio0_1.wav,audio1_0.wav\"\n"
       "                                        means video0 has 2 audio tracks, video1 has 1 audio track.\n"
       "  --sync_tolerance=<f>               Min sync score [0, 1] to consider speaking (-1 = unset, use SDK default)\n"
+      "  --max_sync_faces=<N>               Max faces for sync discrimination (default: 0 = no limit)\n"
+      "  --diarization=<d0,d1,...>          Comma separated list of diarization JSON files (one per video)\n"
+      "  --multiview[=(true|false)]         Enable cross-stream face identification with consistent tracking IDs\n"
+      "                                        across all camera streams (default: false)\n"
       "  --help                             Print out this message\n");
 }
 
@@ -321,13 +335,17 @@ static int ParseMyArgs(int argc, char** argv) {
             GetFlagArgVal("log", arg, &FLAG_log) ||                        //
             GetFlagArgVal("output_codec", arg, &FLAG_outputCodec) ||       //
             GetFlagArgVal("output_format", arg, &FLAG_outputFormat) ||     //
-            GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||
-            GetFlagArgVal("sync_tolerance", arg, &FLAG_syncTolerance)) {
+            GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||             //
+            GetFlagArgVal("sync_tolerance", arg, &FLAG_syncTolerance) ||   //
+            GetFlagArgVal("max_sync_faces", arg, &FLAG_maxSyncFaces) ||    //
+            GetFlagArgVal("multiview", arg, &FLAG_multiview)) {
           continue;
         } else if (GetFlagArgVal("help", arg, &help)) {
           Usage();
           errs = 1;
         } else if (GetFlagArgValAndSplit("src_videos", arg, &FLAG_srcVideoFiles)) {
+          continue;
+        } else if (GetFlagArgValAndSplit("diarization", arg, &FLAG_diarizationFiles)) {
           continue;
         } else if (GetFlagArgValAndSplitNested("src_audios", arg, &FLAG_srcAudioFilesPerVideo)) {
           continue;
@@ -446,6 +464,25 @@ NvCV_Status App::AllocateBuffers() {
     m_inputAudioFrameDataBatched[v].num_audio_channels = num_audio;
   }
 
+  // Load diarization data if provided (one per video stream)
+  m_diarizationReaders.resize(m_numVideoStreams);
+  m_hasDiarization.assign(m_numVideoStreams, false);
+  if (!FLAG_diarizationFiles.empty()) {
+    BAIL_IF_FALSE(FLAG_diarizationFiles.size() == m_numVideoStreams, err, NVCV_ERR_MISMATCH);
+    for (uint32_t i = 0; i < m_numVideoStreams; ++i) {
+      if (FLAG_diarizationFiles[i].empty()) continue;
+      err = m_diarizationReaders[i].Load(FLAG_diarizationFiles[i]);
+      BAIL_IF_ERR(err);
+      BAIL_IF_FALSE(m_diarizationReaders[i].maxSpeakerId() < static_cast<int32_t>(m_numAudioStreamsPerVideo[i]), err,
+                    NVCV_ERR_MISMATCH);
+      m_hasDiarization[i] = true;
+      if (FLAG_verbose) {
+        printf("Video %u: Loaded diarization with %u speakers (max speaker_id=%d)\n", i,
+               m_diarizationReaders[i].numSpeakers(), m_diarizationReaders[i].maxSpeakerId());
+      }
+    }
+  }
+
   // Allocate active audio IDs
   m_activeAudioIdsBatched.resize(m_numVideoStreams);
   m_activeAudioIdsArrays.resize(m_numVideoStreams);
@@ -458,6 +495,7 @@ NvCV_Status App::AllocateBuffers() {
     m_activeAudioIdsBatched[i].active_audio_ids = m_activeAudioIdsArrays[i].data();
     m_activeAudioIdsBatched[i].num_active_audio_ids = num_audio;
   }
+
   // Initialize state arrays
   m_arrayOfAllStateObjects.resize(m_numVideoStreams, nullptr);
   m_batchOfStateObjects.resize(m_numVideoStreams, nullptr);
@@ -497,6 +535,11 @@ bail:
 NvCV_Status App::SetParameters() {
   NvCV_Status err = NVCV_SUCCESS;
 
+  // Set multi-view before batch size and load
+  if (FLAG_multiview) {
+    BAIL_IF_ERR(err = NvAR_SetU32(m_effect, NvAR_Parameter_Config(MultiView), 1));
+  }
+
   // Set batch size first
   BAIL_IF_ERR(err = NvAR_SetU32(m_effect, NvAR_Parameter_Config(BatchSize), m_numVideoStreams));
 
@@ -509,6 +552,15 @@ NvCV_Status App::SetParameters() {
   } else if (FLAG_verbose) {
     printf("Sync tolerance not set; using SDK default.\n");
   }
+
+  BAIL_IF_ERR(err = NvAR_SetU32(m_effect, NvAR_Parameter_Config(MaxSyncFaces), FLAG_maxSyncFaces));
+
+  m_flagsBatched.resize(m_numVideoStreams);
+  for (uint32_t v = 0; v < m_numVideoStreams; ++v) {
+    m_flagsBatched[v] = m_hasDiarization[v] ? 0u : NVARACTIVESPEAKERDETECTION_FLAG_FILTER_SILENT_TRACKS;
+  }
+  BAIL_IF_ERR(err = NvAR_SetU32Array(m_effect, NvAR_Parameter_Config(Flags), m_flagsBatched.data(),
+                                     static_cast<int32_t>(m_numVideoStreams)));
 
   // Set input image (first image in batch, pixels pointer gives access to full buffer)
   BAIL_IF_ERR(err = NvAR_SetObject(m_effect, NvAR_Parameter_Input(Image),
@@ -636,6 +688,29 @@ NvCV_Status App::OpenInputAudio() {
     }
   }
 
+  // With diarization input, replicate single audio buffer to N logical channels
+  for (uint32_t v = 0; v < m_numVideoStreams; v++) {
+    if (v >= FLAG_diarizationFiles.size() || FLAG_diarizationFiles[v].empty()) continue;
+    if (m_numAudioStreamsPerVideo[v] != 1u) {
+      printf("Error: --diarization requires exactly one audio file per video, got %u for video %u\n",
+             m_numAudioStreamsPerVideo[v], v);
+      BAIL(err, NVCV_ERR_PARAMETER);
+    }
+    DiarizationReader probe;
+    BAIL_IF_ERR(err = probe.Load(FLAG_diarizationFiles[v]));
+    if (probe.maxSpeakerId() < 0) {
+      printf("Error: Diarization for video %u must contain at least one word with speaker_id\n", v);
+      BAIL(err, NVCV_ERR_PARSE);
+    }
+    const uint32_t n = static_cast<uint32_t>(probe.maxSpeakerId()) + 1u;
+    m_audioSamplesPerVideo[v].assign(n, m_audioSamplesPerVideo[v][0]);
+    m_numAudioStreamsPerVideo[v] = n;
+    if (n > m_maxAudioStreamsPerVideo) m_maxAudioStreamsPerVideo = n;
+    if (FLAG_verbose) {
+      printf("  Video %u: diarization -> %u logical channels sharing one waveform\n", v, n);
+    }
+  }
+
 bail:
   return err;
 }
@@ -735,8 +810,7 @@ NvCV_Status App::Run() {
       BAIL_IF_ERR(err = TransferToNthImage(batch_size_to_process, &nv_img, &m_srcVid, 1, m_cudaStream, &tmp_img));
 
       // Prepare audio for all tracks of this video
-      // Update active audio IDs based on which tracks still have data
-      m_activeAudioIdsArrays[v].clear();
+      std::vector<bool> has_audio_data(m_numAudioStreamsPerVideo[v], false);
       for (uint32_t a = 0; a < m_numAudioStreamsPerVideo[v]; a++) {
         uint32_t audio_start_sample = last_audio_end_samples[v][a];
         uint32_t requested_audio_end_sample =
@@ -761,8 +835,7 @@ NvCV_Status App::Run() {
                       m_audioSamplesPerVideo[v][a]->begin() + valid_end, m_audioFrameDataBuffers[buffer_idx].begin());
           }
 
-          // Only add to active audio IDs if audio still has data
-          m_activeAudioIdsArrays[v].push_back(a);
+          has_audio_data[a] = true;
 
           if (requested_audio_end_sample >= m_audioSamplesPerVideo[v][a]->size()) {
             if (FLAG_verbose) {
@@ -772,7 +845,26 @@ NvCV_Status App::Run() {
           }
         }
       }
-      // Update the active audio IDs count for this video
+
+      m_activeAudioIdsArrays[v].clear();
+      if (m_hasDiarization[v]) {
+        // Activate per diarization at this time interval
+        const double prev_timestamp = frame_timestamp[v] - 1.0 / static_cast<double>(m_videoFps);
+        const std::vector<uint32_t> diarization_active =
+            m_diarizationReaders[v].GetActiveAudioIdsAndAdvanceCursor(prev_timestamp, frame_timestamp[v]);
+        for (uint32_t active_audio_idx : diarization_active) {
+          if (active_audio_idx < m_numAudioStreamsPerVideo[v] && has_audio_data[active_audio_idx]) {
+            m_activeAudioIdsArrays[v].push_back(active_audio_idx);
+          }
+        }
+      } else {
+        // Activate all audio IDs if available
+        for (uint32_t active_audio_idx = 0; active_audio_idx < m_numAudioStreamsPerVideo[v]; active_audio_idx++) {
+          if (has_audio_data[active_audio_idx]) {
+            m_activeAudioIdsArrays[v].push_back(active_audio_idx);
+          }
+        }
+      }
       m_activeAudioIdsBatched[v].num_active_audio_ids = static_cast<uint32_t>(m_activeAudioIdsArrays[v].size());
 
       batch_indices[batch_size_to_process] = v;
@@ -1036,6 +1128,12 @@ int main(int argc, char** argv) {
            FLAG_srcVideoFiles.size());
     printf("Use ',' to separate audio groups for each video, '+' for tracks within a video.\n");
     printf("Example: --src_audios=\"audio0_0.wav+audio0_1.wav,audio1_0.wav\"\n");
+    return 1;
+  }
+
+  if (!FLAG_diarizationFiles.empty() && FLAG_diarizationFiles.size() != FLAG_srcVideoFiles.size()) {
+    printf("ERROR: --diarization must list one entry per video (%zu videos, %zu entries)\n",
+           FLAG_srcVideoFiles.size(), FLAG_diarizationFiles.size());
     return 1;
   }
 

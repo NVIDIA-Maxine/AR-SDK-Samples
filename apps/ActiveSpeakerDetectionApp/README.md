@@ -15,7 +15,7 @@ The ActiveSpeakerDetectionApp processes video and multiple audio track inputs to
 
 Input expectations
 -----------------
-- **Video:** Resolution between 360x360 and 3840x2160 (BGR, 8-bit).
+- **Video:** Resolution between 360x360 and 4096x2160 (BGR, 8-bit).
 - **Audio:** Use diarized audio, frame-accurate with the video, one track per speaker. Each track should contain only that speaker's speech (or silence when not talking); clean (no background audio or noise), isolated mono. Supported sample rates: 16 kHz, 44.1 kHz, 48 kHz.
 - **Performance:** Expect a few seconds of startup latency; the feature is designed for real-time processing of a single speaker.
 
@@ -36,18 +36,20 @@ Usage
 
 ### Command Line Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `--in_video=<path>` | Input video file path (required) |
-| `--in_audios=<a0,a1,...>` | Comma-separated list of input audio file paths (at least one required) |
-| `--out_video=<path>` | Output video file path (default: `activeSpeakerDetectionOutput.mp4`) |
-| `--codec=<fourcc>` | FourCC for output video (default: `mp4v`; e.g. `avc1` for H.264) |
-| `--model_path=<path>` | Directory containing the TRT models (required) |
-| `--show[={true\|false}]` | Show output video window during processing (default: false) |
+| Argument                    | Description |
+|-----------------------------|-------------|
+| `--in_video=<path>`         | Input video file path (required) |
+| `--in_audios=<a0,a1,...>`   | Comma-separated WAV paths (required). With `--diarization`, exactly one mix-down file is expected; logical channels are derived from diarization speaker IDs. |
+| `--out_video=<path>`        | Output video file path (default: `activeSpeakerDetectionOutput.mp4`) |
+| `--codec=<fourcc>`          | FOURCC for output video (default: `mp4v`; e.g. `avc1` for H.264) |
+| `--model_path=<path>`       | Directory containing the TRT models (required) |
+| `--show[={true\|false}]`    | Show output video window (default: false) |
 | `--verbose[={true\|false}]` | Enable verbose output (default: false) |
-| `--log=<file>` | Log SDK errors to file, `"stderr"` or `""` (default: `stderr`) |
-| `--log_level=<N>` | Log level: `{0, 1, 2, 3}` = `{FATAL, ERROR, WARNING, INFO}` (default: 1) |
-| `--sync_tolerance=<f>` | Min sync score (0, 1) to consider a face as speaking; `-1` = unset, use SDK default |
+| `--log=<file>`              | Log SDK errors to file, `"stderr"` or `""` (default: `stderr`) |
+| `--log_level=<N>`           | Log level: `{0, 1, 2, 3}` = `{FATAL, ERROR, WARNING, INFO}` (default: 1) |
+| `--sync_tolerance=<f>`      | Min sync score [0, 1] to consider speaking (`-1` = unset, use SDK default) |
+| `--max_sync_faces=<N>`      | Max faces for sync discrimination (default: `0` = no limit) |
+| `--diarization=<path>`      | Path to diarization JSON file for active audio ID determination |
 
 ### Example
 
@@ -55,7 +57,31 @@ Usage
 # Multiple audio tracks (comma-separated)
 ActiveSpeakerDetectionApp \
   --in_video=activeSpeakerDetectionSampleVideo.mp4 \
-  --in_audios=audio0.wav,audio1.wav \
+  --in_audios=activeSpeakerDetectionSampleAudio0.wav,activeSpeakerDetectionSampleAudio1.wav \
+  --out_video=activeSpeakerDetectionOutput.mp4 \
+  --model_path=/path/to/models \
+  --show \
+  --verbose
+```
+
+## Diarization Input
+
+Use `--diarization=<path>` to provide a diarization JSON file that controls which
+audio tracks are active at each point in time. The JSON must contain a `words` array
+with `start`, `end`, and `speaker_id` fields per word.
+
+When `--diarization` is used, exactly one audio file must be provided in `--in_audios`.
+The app creates `max(speaker_id) + 1` logical channels that all share the same waveform;
+which channels are active each frame is determined by diarization only.
+
+Words must be ordered by start time per speaker.
+
+**Example:**
+```bash
+ActiveSpeakerDetectionApp \
+  --in_video=activeSpeakerDetectionSampleVideo.mp4 \
+  --in_audios=activeSpeakerDetectionSampleAudioMixed.wav \
+  --diarization=activeSpeakerDetectionSampleDiarization.json \
   --out_video=activeSpeakerDetectionOutput.mp4 \
   --model_path=/path/to/models \
   --show \

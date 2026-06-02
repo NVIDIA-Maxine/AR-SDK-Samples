@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,11 +27,11 @@
 
 #include <algorithm>
 #include <deque>
-#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <vector>
 
+#include "diarizationReader.h"
 #include "nvAR.h"
 #include "nvARActiveSpeakerDetection.h"
 #include "nvAR_defs.h"
@@ -82,6 +82,8 @@ std::string FLAG_modelPath;
 std::string FLAG_log;
 std::string FLAG_codec = "mp4v";   // FourCC for output video
 float FLAG_syncTolerance = -1.0f;  // [0, 1] to set; -1 = unset (use SDK default)
+unsigned FLAG_maxSyncFaces = 0;    // max faces for sync discrimination (0 = no limit)
+std::string FLAG_diarization;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /// Types                                                                                                            ///
@@ -142,9 +144,14 @@ class App {
 
   std::vector<uint32_t> m_activeAudioIds;  // Buffer for active audio IDs to pass to API
 
+  // Diarization data for active audio ID determination
+  DiarizationReader m_diarizationReader;
+  bool m_hasDiarization;
+
   // Batched parameters (single element for non-batched use)
   uint32_t m_newShot;  // Input: shot change mode
   uint32_t m_flush;    // Input: flush mode (not used yet)
+  uint32_t m_flagsVal; // Input: flags
   uint32_t m_ready;    // Output: ready status
 
   // Frame caching for output synchronization
@@ -239,13 +246,17 @@ static bool GetFlagArgValAndSplit(const char* flag, const char* arg, std::vector
   if (!GetFlagArgVal(flag, arg, &valStr)) return false;
 
   if (valStr) {
-    std::string value(valStr);
-    std::istringstream iss(value);
-    std::string part;
-    while (std::getline(iss, part, ',')) {
-      if (!part.empty()) {
-        vals->push_back(part);
+    try {
+      std::string value(valStr);
+      std::istringstream iss(value);
+      std::string part;
+      while (std::getline(iss, part, ',')) {
+        if (!part.empty()) {
+          vals->push_back(part);
+        }
       }
+    } catch (const std::ios_base::failure&) {
+      return false;
     }
   }
   return true;
@@ -268,13 +279,16 @@ static void Usage() {
       " --verbose[=(true|false)]   enable verbose output\n"
       " --show[=(true|false)]      show output video window\n"
       " --in_video=<path>          input video file path (required)\n"
-      " --in_audios=<a0,a1,...>    comma-separated list of input audio file paths (at least one required)\n"
+      " --in_audios=<a0,a1,...>    comma-separated WAV paths (required). With --diarization, exactly one mix-down "
+      "file is expected; logical channels are derived from diarization speaker IDs.\n"
       " --out_video=<path>         output video file path (default: activeSpeakerDetectionOutput.mp4)\n"
       " --codec=<fourcc>           FOURCC for output video (default: mp4v; e.g. avc1 for H.264)\n"
       " --model_path=<path>        directory containing the TRT models (required)\n"
       " --log=<file>               log SDK errors to file, \"stderr\" or \"\" (default: stderr)\n"
       " --log_level=<N>            log level: {0, 1, 2, 3} = {FATAL, ERROR, WARNING, INFO} (default: 1)\n"
-      " --sync_tolerance=<f>       min sync score [0, 1] to consider speaking (-1 = unset, use SDK default)\n");
+      " --sync_tolerance=<f>       min sync score [0, 1] to consider speaking (-1 = unset, use SDK default)\n"
+      " --max_sync_faces=<N>       max faces for sync discrimination (default: 0 = no limit)\n"
+      " --diarization=<path>       path to diarization JSON file for active audio ID determination\n");
 }
 
 static int ParseMyArgs(int argc, char** argv) {
@@ -284,17 +298,19 @@ static int ParseMyArgs(int argc, char** argv) {
     const char* arg = *argv;
     if (arg[0] != '-') {
       continue;
-    } else if ((arg[1] == '-') &&                                           //
-               (GetFlagArgVal("verbose", arg, &FLAG_verbose) ||             //
-                GetFlagArgVal("show", arg, &FLAG_show) ||                   //
-                GetFlagArgVal("in_video", arg, &FLAG_inVideo) ||            //
-                GetFlagArgValAndSplit("in_audios", arg, &FLAG_inAudios) ||  //
-                GetFlagArgVal("out_video", arg, &FLAG_outVideo) ||          //
-                GetFlagArgVal("codec", arg, &FLAG_codec) ||                 //
-                GetFlagArgVal("model_path", arg, &FLAG_modelPath) ||        //
-                GetFlagArgVal("log", arg, &FLAG_log) ||                     //
-                GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||          //
-                GetFlagArgVal("sync_tolerance", arg, &FLAG_syncTolerance))) {
+    } else if ((arg[1] == '-') &&                                             //
+               (GetFlagArgVal("verbose", arg, &FLAG_verbose) ||               //
+                GetFlagArgVal("show", arg, &FLAG_show) ||                     //
+                GetFlagArgVal("in_video", arg, &FLAG_inVideo) ||              //
+                GetFlagArgValAndSplit("in_audios", arg, &FLAG_inAudios) ||    //
+                GetFlagArgVal("out_video", arg, &FLAG_outVideo) ||            //
+                GetFlagArgVal("codec", arg, &FLAG_codec) ||                   //
+                GetFlagArgVal("model_path", arg, &FLAG_modelPath) ||          //
+                GetFlagArgVal("log", arg, &FLAG_log) ||                       //
+                GetFlagArgVal("log_level", arg, &FLAG_logLevel) ||            //
+                GetFlagArgVal("sync_tolerance", arg, &FLAG_syncTolerance) ||  //
+                GetFlagArgVal("max_sync_faces", arg, &FLAG_maxSyncFaces) ||   //
+                GetFlagArgVal("diarization", arg, &FLAG_diarization))) {
       continue;
     } else if (GetFlagArgVal("help", arg, &help)) {
       Usage();
@@ -310,6 +326,8 @@ static int ParseMyArgs(int argc, char** argv) {
 App::App()
     : m_cudaStream(nullptr),
       m_speakerDetectionHandle(nullptr),
+      m_inputAudioFrameData({}),
+      m_inputActiveAudioIds({}),
       m_outputTrackingData({}),
       m_InputImageCpu({}),
       m_InputImageGpu({}),
@@ -324,7 +342,9 @@ App::App()
       m_outputFrameCount(0),
       m_newShot(NVARACTIVESPEAKERDETECTION_DETECT_SHOT_CHANGE),
       m_flush(0),
-      m_ready(0) {}
+      m_flagsVal(0),
+      m_ready(0),
+      m_hasDiarization(false) {}
 
 NvCV_Status App::SetInputVideo(const std::string& file) {
   NvCV_Status err = NVCV_SUCCESS;
@@ -402,6 +422,29 @@ NvCV_Status App::Init() {
   // Update number of audio streams based on loaded audio files
   m_numAudioStreams = static_cast<unsigned int>(m_audioSamples.size());
 
+  // Load diarization data if provided
+  if (!FLAG_diarization.empty()) {
+    err = m_diarizationReader.Load(FLAG_diarization);
+    BAIL_IF_ERR(err);
+    if (m_diarizationReader.maxSpeakerId() < 0) {
+      std::cerr << "ERROR: Diarization must contain at least one word with speaker_id" << std::endl;
+      BAIL(err, NVCV_ERR_PARSE);
+    }
+    if (m_audioSamples.size() != 1u) {
+      std::cerr << "ERROR: --diarization requires exactly one audio file in --in_audios, got "
+                << m_audioSamples.size() << std::endl;
+      BAIL(err, NVCV_ERR_PARAMETER);
+    }
+    m_hasDiarization = true;
+    m_numAudioStreams = static_cast<unsigned int>(m_diarizationReader.maxSpeakerId()) + 1u;
+    m_audioSamples.assign(m_numAudioStreams, m_audioSamples[0]);
+    m_audioNumSamples.assign(m_numAudioStreams, m_audioNumSamples[0]);
+    if (FLAG_verbose) {
+      std::cout << "Loaded diarization with " << m_diarizationReader.numSpeakers()
+                << " speakers (max speaker_id=" << m_diarizationReader.maxSpeakerId() << ")" << std::endl;
+    }
+  }
+
   // Create feature
   err = NvAR_Create(NvAR_Feature_ActiveSpeakerDetection, &m_speakerDetectionHandle);
   BAIL_IF_ERR(err);
@@ -450,6 +493,14 @@ NvCV_Status App::Init() {
   } else if (FLAG_verbose) {
     std::cout << "Sync tolerance not set; using SDK default." << std::endl;
   }
+
+  err = NvAR_SetU32(m_speakerDetectionHandle, NvAR_Parameter_Config(MaxSyncFaces), FLAG_maxSyncFaces);
+  BAIL_IF_ERR(err);
+
+  m_flagsVal = m_hasDiarization ? 0u : NVARACTIVESPEAKERDETECTION_FLAG_FILTER_SILENT_TRACKS;
+  // NewShot API is still used for shot-change; no shot bits set here.
+  err = NvAR_SetU32Array(m_speakerDetectionHandle, NvAR_Parameter_Config(Flags), &m_flagsVal, 1);
+  BAIL_IF_ERR(err);
 
   if (FLAG_verbose) {
     std::cout << "Feature loaded. Max output identities: " << m_maxNumOutputIdentities << std::endl;
@@ -512,9 +563,10 @@ NvCV_Status App::Run() {
 
     m_newShot = NVARACTIVESPEAKERDETECTION_DETECT_SHOT_CHANGE;
 
-    // Prepare audio frame for each track and build active audio IDs
+    // Prepare audio frame for each track
     // When audio ends before video, continue with zero-filled audio
     m_activeAudioIds.clear();
+    std::vector<bool> has_audio_data(m_numAudioStreams, false);
 
     for (unsigned int track_idx = 0; track_idx < m_numAudioStreams; ++track_idx) {
       // Calculate audio window based on video timestamp for this track
@@ -535,15 +587,27 @@ NvCV_Status App::Run() {
                 m_audioSamples[track_idx]->begin() + valid_audio_end_sample,
                 m_audioFrameDataBuffers[track_idx].begin());
 
-      const bool got_audio_frame = audio_start_sample < m_audioSamples[track_idx]->size();
+      has_audio_data[track_idx] = audio_start_sample < m_audioSamples[track_idx]->size();
 
       // Update audio frame size
       m_inputAudioFrames[track_idx].num_samples = audio_frame_length;
+    }
 
-      // Only add to active audio IDs if audio still has data
-      // (zero-filled audio will be used but channel won't be considered active)
-      if (got_audio_frame) {
-        m_activeAudioIds.push_back(m_inputAudioFrames[track_idx].audio_id);
+    if (m_hasDiarization) {
+      // Activate per diarization at this time interval
+      double frame_time_end = frame_timestamp + estimated_video_frame_duration;
+      std::vector<uint32_t> diarization_active =
+          m_diarizationReader.GetActiveAudioIdsAndAdvanceCursor(frame_timestamp, frame_time_end);
+      for (uint32_t active_audio_idx : diarization_active) {
+        if (active_audio_idx < m_numAudioStreams && has_audio_data[active_audio_idx]) {
+          m_activeAudioIds.push_back(m_inputAudioFrames[active_audio_idx].audio_id);
+        }
+      }
+    } else {
+      for (unsigned int active_audio_idx = 0; active_audio_idx < m_numAudioStreams; ++active_audio_idx) {
+        if (has_audio_data[active_audio_idx]) {
+          m_activeAudioIds.push_back(m_inputAudioFrames[active_audio_idx].audio_id);
+        }
       }
     }
 

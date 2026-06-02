@@ -23,7 +23,7 @@
 # ActiveSpeakerDetectionApp #
 #############################
 
-set(REQUIRED_FEATURES nvARActiveSpeakerDetection:1.1.0.0)
+set(REQUIRED_FEATURES nvARActiveSpeakerDetection:1.1.1.0)
 foreach(REQUIRED_FEATURE_AND_VERSION IN LISTS REQUIRED_FEATURES)
   verify_app_feature_dependency(${REQUIRED_FEATURE_AND_VERSION} RESULT)
   if(NOT RESULT)
@@ -44,6 +44,7 @@ endif()
 
 set(APP_SRCS
   ActiveSpeakerDetectionApp.cpp
+  ${ARSDKSampleApps_utils_DIR}/diarizationReader.cpp
   ${ARSDKSampleApps_utils_DIR}/waveReadWrite.cpp
 )
 
@@ -69,6 +70,7 @@ target_link_libraries(ActiveSpeakerDetectionApp PRIVATE
 target_include_directories(ActiveSpeakerDetectionApp PRIVATE
   ${ARSDKSampleApps_utils_DIR}
   ${OpenCV_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external/nlohmann/json/single_include
 )
 
 get_target_property(NVAR_DYNAMIC_LIBRARY_DIR nvARPose DYNAMIC_LIBRARY_DIR)
@@ -119,6 +121,7 @@ add_custom_command(TARGET ActiveSpeakerDetectionApp POST_BUILD
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleVideo.mp4
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio0.wav
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio1.wav
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudioMixed.wav
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleDiarization.json
   $<TARGET_FILE_DIR:ActiveSpeakerDetectionApp>
 )
-

@@ -539,22 +539,27 @@ NvCV_Status App::setInputVideo(const std::string& file) {
 }
 
 NvCV_Status App::setInputCamera(int index, const std::string& resStr) {
+  int width = 0, height = 0;
+  if (!resStr.empty()) {
+    int n, parsed_chars = 0;
+    n = sscanf(resStr.c_str(), "%d%*[xX]%d%n", &width, &height, &parsed_chars);
+    if (n != 2 || parsed_chars != static_cast<int>(resStr.size())) {
+      parsed_chars = 0;
+      n = sscanf(resStr.c_str(), "%d%n", &height, &parsed_chars);
+      if (n == 1 && parsed_chars == static_cast<int>(resStr.size())) {
+        width = (int)(height * (4. / 3.) + .5);
+      } else {
+        printf("Invalid --cam_res=\"%s\"; expected [widthx]height\n", resStr.c_str());
+        return NvFromAppErr(APP_ERR_PARAM);
+      }
+    }
+    if (width <= 0 || height <= 0) {
+      printf("Invalid --cam_res=\"%s\"; resolution must be positive\n", resStr.c_str());
+      return NvFromAppErr(APP_ERR_PARAM);
+    }
+  }
   if (!_vidIn.open(index)) return NvFromAppErr(APP_ERR_OPEN);
   if (!resStr.empty()) {
-    int n, width, height;
-    n = sscanf(resStr.c_str(), "%d%*[xX]%d", &width, &height);
-    switch (n) {
-      case 2:
-        break;  // We have read both width and height
-      case 1:
-        height = width;
-        width = (int)(height * (4. / 3.) + .5);
-        break;
-      default:
-        height = 0;
-        width = 0;
-        break;
-    }
     if (width && !_vidIn.set(CV_CAP_PROP_FRAME_WIDTH, width)) {
       return NvFromAppErr(APP_ERR_VIDEO);
     }
@@ -570,7 +575,10 @@ NvCV_Status App::setInputCamera(int index, const std::string& resStr) {
   // Rounding the frame rate is required because OpenCV does not support all frame rates when writing video
   static const int fps_precision = 1000;
   _frameRate = static_cast<int>((_frameRate + 0.5) * fps_precision) / static_cast<double>(fps_precision);
-  if (FLAG_verbose)
+  if (!resStr.empty())
+    printf("Requested camera capture resolution %dx%d; actual resolution set to %ux%u @ %4.1f fps\n", width, height,
+           _videoWidth, _videoHeight, _frameRate);
+  else if (FLAG_verbose)
     printf("Camera capture resolution set to %dx%d @ %4.1f fps\n", _videoWidth, _videoHeight, _frameRate);
   return NVCV_SUCCESS;
 }
@@ -1067,7 +1075,8 @@ NvCV_Status App::resizeDst() {
   if (_viewMode & VIEW_PLOT) {
     _plotX = 0;
     _plotY = height;
-    _plotWidth = width;
+    _plotWidth = width ? width : _compWidth;
+    width = _plotWidth;
     height += _plotHeight;
   }
   BAIL_IF_ERR(err = NvCVImage_Realloc(&_compImg, width, height, _compImg.pixelFormat, _compImg.componentType,

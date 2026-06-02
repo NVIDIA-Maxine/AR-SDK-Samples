@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: MIT
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cctype>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -68,6 +69,7 @@ std::vector<std::string> FLAG_srcVideoFiles;
 std::vector<std::string> FLAG_srcAudioFiles;
 unsigned FLAG_logLevel = NVCV_LOG_ERROR;
 unsigned FLAG_headMovementSpeed = 0;  // set to default value for Head Movement Speed (SLOW)
+unsigned FLAG_language = 0;
 
 static bool GetFlagArgVal(const char* flag, const char* arg, const char** val) {
   if (*arg != '-') return false;
@@ -80,7 +82,13 @@ static bool GetFlagArgVal(const char* flag, const char* arg, const char** val) {
   }
   size_t n = s - arg;
   if ((strlen(flag) != n) || (strncmp(flag, arg, n) != 0)) return false;
-  *val = s + 1;
+  const char* v = s + 1;
+  while (std::isspace(static_cast<unsigned char>(*v))) ++v;  // Ignore leading whitespace
+  if (*v == '\0') {
+    printf("ERROR: Value is missing for flag: \"%s\"\n", flag);
+    return false;
+  }
+  *val = v;
   return true;
 }
 
@@ -111,17 +119,27 @@ static bool GetFlagArgVal(const char* flag, const char* arg, float* val) {
 static bool GetFlagArgVal(const char* flag, const char* arg, long* val) {
   const char* valStr;
   bool success = GetFlagArgVal(flag, arg, &valStr);
-  if (success) *val = strtol(valStr, NULL, 10);
-  return success;
+  if (!success) return false;
+  char* end = nullptr;
+  long v = strtol(valStr, &end, 0);  // accommodate 123 decimal, 0x123 hex and 0123 octal
+  if (end == valStr || *end != '\0') {
+    printf("ERROR: Invalid integer value for flag: \"%s\"\n", flag);
+    return false;
+  }
+  *val = v;
+  return true;
 }
 
 static bool GetFlagArgVal(const char* flag, const char* arg, unsigned* val) {
   long longVal;
   bool success = GetFlagArgVal(flag, arg, &longVal);
-  if (success) {
-    *val = (unsigned)longVal;
+  if (!success) return false;
+  if (longVal < 0) {
+    printf("ERROR: Value for flag: \"%s\" cannot be negative\n", flag);
+    return false;
   }
-  return success;
+  *val = (unsigned)longVal;
+  return true;
 }
 
 static bool GetFlagArgValAndSplit(const char* flag, const char* arg, std::vector<std::string>& vals) {
@@ -160,6 +178,8 @@ static void Usage() {
       "  --src_audios=<src1[, ...]>         Comma separated list of source audio files\n"
       "  --head_movement_speed=<N>          Specify the expected speed of head motion in the input video: 0=SLOW, "
       "1=FAST. Default: 0 (SLOW)\n"
+      " --language=<N>                      Specify whether to use a language-specific model for processing, or the "
+      "generic multi-language model: 0=Generic, 1=German, 2=French, 3=Spanish. Default: 0 (Generic)\n"
       "  --help                             Print out this message\n");
 }
 
@@ -187,6 +207,7 @@ static int ParseMyArgs(int argc, char** argv) {
             GetFlagArgVal("output_codec", arg, &FLAG_outputCodec) ||               //
             GetFlagArgVal("output_format", arg, &FLAG_outputFormat) ||             //
             GetFlagArgVal("head_movement_speed", arg, &FLAG_headMovementSpeed) ||  //
+            GetFlagArgVal("language", arg, &FLAG_language) ||                      //
             GetFlagArgVal("log_level", arg, &FLAG_logLevel)) {
           continue;
         } else if (GetFlagArgVal("help", arg, &help)) {  // --help
@@ -355,6 +376,7 @@ class LipsyncApp : public BaseApp {
                                      sizeof(NvCVImage)));  // Set the first of the batched images in ...
 
     BAIL_IF_ERR(err = NvAR_SetF32(m_effect, NvAR_Parameter_Config(VideoFPS), src_video_fps));
+    BAIL_IF_ERR(err = NvAR_SetU32(m_effect, NvAR_Parameter_Config(Language), FLAG_language));
   bail:
     return err;
   }

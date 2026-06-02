@@ -23,7 +23,7 @@
 # ActiveSpeakerDetectionTritonClientApp #
 #########################################
 
-set(REQUIRED_FEATURES nvARActiveSpeakerDetection:1.1.0.0)
+set(REQUIRED_FEATURES nvARActiveSpeakerDetection:1.1.1.0)
 foreach(REQUIRED_FEATURE_AND_VERSION IN LISTS REQUIRED_FEATURES)
   verify_app_feature_dependency(${REQUIRED_FEATURE_AND_VERSION} RESULT)
   if(NOT RESULT)
@@ -40,6 +40,7 @@ set(SPEAKERDETECTIONTRITONCLIENTAPP_SRCS
   ActiveSpeakerDetectionTritonClientApp.cpp
   ${ARSDKSampleApps_utils_DIR}/batchUtilities.cpp
   ${ARSDKSampleApps_utils_DIR}/batchUtilities.h
+  ${ARSDKSampleApps_utils_DIR}/diarizationReader.cpp
   ${ARSDKSampleApps_utils_DIR}/waveReadWrite.cpp
   ${ARSDKSampleApps_utils_DIR}/waveReadWrite.h
   ${ARSDKSampleApps_utils_DIR}/wave.h
@@ -62,6 +63,7 @@ target_link_libraries(ActiveSpeakerDetectionTritonClientApp PRIVATE
 target_include_directories(ActiveSpeakerDetectionTritonClientApp PRIVATE
   ${ARSDKSampleApps_utils_DIR}
   ${OpenCV_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../external/nlohmann/json/single_include
 )
 
 target_link_libraries(ActiveSpeakerDetectionTritonClientApp PRIVATE nvARActiveSpeakerDetection)
@@ -90,5 +92,7 @@ add_custom_command(TARGET ActiveSpeakerDetectionTritonClientApp POST_BUILD
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleVideo.mp4
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio0.wav
   ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudio1.wav
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleAudioMixed.wav
+  ${ARSDKSampleApps_RESOURCES_DIR}/activeSpeakerDetectionSampleDiarization.json
   $<TARGET_FILE_DIR:ActiveSpeakerDetectionTritonClientApp>
 )

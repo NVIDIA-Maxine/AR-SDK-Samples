@@ -108,6 +108,7 @@ The LipSyncApp supports various following command line arguments. These can be p
 | `--log_level=<N>` | Log level: `{0, 1, 2, 3}` = `{FATAL, ERROR, WARNING, INFO}` (default: 1) |
 | `--verbose[={true\|false}]` | Enable verbose application output (default: false) |
 | `--debug[={true\|false}]` | Print and annotate output video with debug information (default: false) |
+| `--language=<N>`             | Specify whether to use a language-specific model for processing, or the generic multi-language model: 0=Generic, 1=German, 2=French, 3=Spanish (default: 0) |
 
 #### Algorithm Tuning Arguments
 
